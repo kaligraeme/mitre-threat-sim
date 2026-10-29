@@ -119,8 +119,11 @@
 
   // ---------- normalization ----------
 
+  // Older ICS and Mobile releases tag their IDs 'mitre-ics-attack' / 'mitre-mobile-attack'.
+  const MITRE_SOURCES = ['mitre-attack', 'mitre-ics-attack', 'mitre-mobile-attack'];
   function mitreRef(o) {
-    return (o.external_references || []).find(r => r.source_name === 'mitre-attack' && r.external_id) || null;
+    const refs = (o.external_references || []).filter(r => r.external_id && MITRE_SOURCES.includes(r.source_name));
+    return refs.find(r => r.source_name === 'mitre-attack') || refs[0] || null;
   }
 
   function normalizeObject(domain, o) {

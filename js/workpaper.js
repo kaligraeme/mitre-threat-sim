@@ -3,8 +3,8 @@
  *
  * Global `Workpaper`. Builds an .xlsx with ExcelJS (vendored in js/vendor and
  * loaded on first use) with these sheets: Executive Summary, one Matrix sheet
- * per domain, Techniques, Mitigations, Detections, ICS Assets, Telemetry and
- * Control Map.
+ * per domain, Techniques, Mitigations, Detections, ICS Assets, Telemetry,
+ * Analytics and Control Map.
  *
  * The status cells on Mitigations and Detections are drop-down inputs. Every
  * figure that depends on them — technique coverage, the readiness bars, matrix
@@ -24,19 +24,20 @@
   const GLYPH = { covered: '✓', mitigated: 'M', detected: 'D', gap: '✕' };
   const SHEET = {
     summary: 'Executive Summary', techniques: 'Techniques', mitigations: 'Mitigations', detections: 'Detections',
-    assets: 'ICS Assets', telemetry: 'Telemetry', map: 'Control Map',
+    assets: 'ICS Assets', telemetry: 'Telemetry', analytics: 'Analytics', map: 'Control Map',
   };
   const matrixSheetName = label => 'Matrix (' + label + ')';
 
   // Readiness bars on the summary: BAR.cells narrow columns from column BAR.first, each worth 1/BAR.cells.
   const BAR = { first: 10, cells: 40 };
   const TOP_ACTIONS = 10;
+  const CHANNELS_PER_SOURCE = 8;   // Telemetry 'What to collect'; the Analytics sheet lists every one
 
   // Light palette only: spreadsheet cells have no dark mode.
   const C = {
     ink: 'FF111827', muted: 'FF6B7280', white: 'FFFFFFFF',
     header: 'FF1F2937', band: 'FF334155', subband: 'FFE2E8F0', border: 'FFD1D5DB',
-    input: 'FFFFF4CC', inputBorder: 'FFD4A600', inputHeader: 'FF8A6D00', inputTab: 'FFFAB219',
+    input: 'FFFFF4CC', inputSoft: 'FFFFFBEB', inputBorder: 'FFD4A600', inputHeader: 'FF8A6D00', inputTab: 'FFFAB219',
     live: 'FFF1F5F9', link: 'FF1D4ED8', track: 'FFE5E7EB', idle: 'FFF3F4F6',
     good: 'FF0CA30C', warning: 'FFFAB219', critical: 'FFD03B3B',
     goodTint: 'FFD9F2D9', goodInk: 'FF0B5D0B', warnTint: 'FFFFF0C7', warnInk: 'FF7A5200', critTint: 'FFF9D6D6', critInk: 'FF8B1D1D',
@@ -48,110 +49,125 @@
   ];
 
   // ---------- column layouts (fixed, so formulas can address columns by key) ----------
+  // wrap: the cell wraps and its row grows to fit. Everything else stays on one line.
 
   const TECH_COLS = [
     { key: 'domain', header: 'Domain', width: 11 },
     { key: 'id', header: 'Technique ID', width: 12, link: true },
-    { key: 'name', header: 'Technique', width: 34 },
-    { key: 'parent', header: 'Sub-technique of', width: 28 },
-    { key: 'tactics', header: 'Tactics', width: 26 },
-    { key: 'platforms', header: 'Platforms', width: 22 },
-    { key: 'usedN', header: 'Used by (#)', width: 9, fmt: '0' },
+    { key: 'name', header: 'Technique', width: 32, wrap: true },
+    { key: 'parent', header: 'Sub-technique of', width: 26, wrap: true },
+    { key: 'tactics', header: 'Tactics', width: 22, wrap: true },
+    { key: 'platforms', header: 'Platforms', width: 24, wrap: true },
+    { key: 'usedN', header: 'Used by (#)', width: 9, fmt: '0', center: true },
     { key: 'usedBy', header: 'Used by', width: 32 },
-    { key: 'mitN', header: 'Mitigations (#)', width: 11, fmt: '0' },
+    { key: 'mitN', header: 'Mitigations (#)', width: 11, fmt: '0', center: true },
     { key: 'mits', header: 'Mitigations', width: 42 },
-    { key: 'detN', header: 'Detection strategies (#)', width: 11, fmt: '0' },
+    { key: 'detN', header: 'Detection strategies (#)', width: 11, fmt: '0', center: true },
     { key: 'dets', header: 'Detection strategies', width: 42 },
     { key: 'assets', header: 'ICS assets targeted', width: 30 },
     { key: 'mitigated', header: 'Mitigation in place? (live)', width: 13, live: true, center: true },
     { key: 'detected', header: 'Detection deployed? (live)', width: 13, live: true, center: true },
     { key: 'coverage', header: 'Coverage (live)', width: 21, live: true },
-    { key: 'procedures', header: 'How the profile uses it (procedure examples)', width: 70 },
-    { key: 'description', header: 'Description', width: 70 },
+    { key: 'procedures', header: 'How the profile uses it (procedure examples)', width: 80 },
+    { key: 'description', header: 'Description', width: 80 },
     { key: 'key', header: 'Key', helper: true },
     { key: 'tacticKeys', header: 'Tactic keys', helper: true },
-    { key: 'mitKeys', header: 'Mitigation keys', helper: true },
-    { key: 'detKeys', header: 'Detection keys', helper: true },
     { key: 'assetKeys', header: 'Asset keys', helper: true },
     { key: 'code', header: 'Coverage code (live)', helper: true },
   ];
 
-  const MIT_COLS = [
-    { key: 'priority', header: 'Priority (at export)', width: 10, fmt: '0', center: true },
+  // Shared by Mitigations and Detections: the inputs sit right after the name so they stay in view.
+  const controlCols = (noun, statusHeader, verb) => [
+    { key: 'priority', header: 'Priority (at export)', width: 9, fmt: '0', center: true },
     { key: 'domain', header: 'Domain', width: 11 },
-    { key: 'id', header: 'Mitigation ID', width: 12, link: true },
-    { key: 'name', header: 'Mitigation', width: 36 },
-    { key: 'status', header: 'Implementation status ▼', width: 18, input: true },
-    { key: 'techN', header: 'Profile techniques addressed (#)', width: 13, fmt: '0' },
-    { key: 'share', header: 'Share of profile techniques', width: 12, fmt: '0%' },
-    { key: 'open', header: 'Unmitigated techniques it addresses (live)', width: 15, fmt: '0', live: true },
-    { key: 'techs', header: 'Profile techniques addressed', width: 50 },
-    { key: 'description', header: 'Description', width: 70 },
-    { key: 'owner', header: 'Owner (optional)', width: 18 },
-    { key: 'notes', header: 'Notes / evidence (optional)', width: 36 },
+    { key: 'id', header: noun + ' ID', width: 12, link: true },
+    { key: 'name', header: noun, width: noun === 'Mitigation' ? 32 : 44, wrap: true },
+    { key: 'status', header: statusHeader, width: 17, input: true },
+    { key: 'owner', header: 'Owner', width: 16, inputSoft: true },
+    { key: 'targetDate', header: 'Target date', width: 12, inputSoft: true, fmt: 'yyyy-mm-dd' },
+    { key: 'notes', header: 'Notes / evidence', width: 30, inputSoft: true },
+    { key: 'statusAtExport', header: 'Status at export', width: 13 },
+    { key: 'changed', header: 'Changed since export (live)', width: 12, live: true, center: true },
+    { key: 'techN', header: `Profile techniques ${verb} (#)`, width: 12, fmt: '0', center: true },
+    { key: 'share', header: "Share of its domain's profile techniques", width: 13, fmt: '0.0%', center: true },
+    { key: 'adds', header: 'Adds (at export)', width: 10, fmt: '0', center: true },
+    { key: 'cumulative', header: `Cumulative share ${noun === 'Mitigation' ? 'mitigated' : 'detected'} (at export)`, width: 13, fmt: '0%', center: true },
+    { key: 'open', header: noun === 'Mitigation' ? 'Unmitigated techniques it addresses (live)' : 'Undetected techniques it covers (live)', width: 15, fmt: '0', live: true, center: true },
+  ];
+
+  const MIT_COLS = [
+    ...controlCols('Mitigation', 'Implementation status ▼', 'addressed'),
+    { key: 'techs', header: 'Profile techniques addressed (IDs)', width: 40 },
+    { key: 'description', header: 'Description', width: 80 },
     { key: 'key', header: 'Key', helper: true },
   ];
 
   const DET_COLS = [
-    { key: 'priority', header: 'Priority (at export)', width: 10, fmt: '0', center: true },
-    { key: 'domain', header: 'Domain', width: 11 },
-    { key: 'id', header: 'Detection ID', width: 12, link: true },
-    { key: 'name', header: 'Detection strategy', width: 44 },
-    { key: 'status', header: 'Deployment status ▼', width: 18, input: true },
-    { key: 'techN', header: 'Profile techniques covered (#)', width: 13, fmt: '0' },
-    { key: 'share', header: 'Share of profile techniques', width: 12, fmt: '0%' },
-    { key: 'open', header: 'Undetected techniques it covers (live)', width: 15, fmt: '0', live: true },
-    { key: 'anN', header: 'Analytics (#)', width: 10, fmt: '0' },
-    { key: 'platforms', header: 'Analytic platforms', width: 24 },
+    ...controlCols('Detection strategy', 'Deployment status ▼', 'covered'),
+    { key: 'anN', header: 'Analytics (#)', width: 10, fmt: '0', center: true },
+    { key: 'platforms', header: 'Analytic platforms', width: 22, wrap: true },
     { key: 'dcs', header: 'Data components', width: 36 },
     { key: 'logSources', header: 'Log sources', width: 36 },
-    { key: 'techs', header: 'Profile techniques covered', width: 40 },
-    { key: 'analytics', header: 'Analytics', width: 40 },
-    { key: 'owner', header: 'Owner (optional)', width: 18 },
-    { key: 'notes', header: 'Notes / evidence (optional)', width: 36 },
+    { key: 'techs', header: 'Profile techniques covered (IDs)', width: 30 },
     { key: 'key', header: 'Key', helper: true },
     { key: 'dcKeys', header: 'Data component keys', helper: true },
   ];
 
   const ASSET_COLS = [
     { key: 'id', header: 'Asset ID', width: 10, link: true },
-    { key: 'name', header: 'ICS asset', width: 36 },
-    { key: 'techN', header: 'Profile techniques targeting it (#)', width: 14, fmt: '0' },
-    { key: 'share', header: 'Share of ICS profile techniques', width: 13, fmt: '0%' },
-    { key: 'exposed', header: 'Targeting techniques with no coverage (live)', width: 16, fmt: '0', live: true },
-    { key: 'covered', header: 'Targeting techniques mitigated + detected (live)', width: 16, fmt: '0', live: true },
-    { key: 'platforms', header: 'Platforms', width: 24 },
-    { key: 'sectors', header: 'Sectors', width: 18 },
-    { key: 'techs', header: 'Profile techniques targeting it', width: 50 },
-    { key: 'description', header: 'Description', width: 70 },
+    { key: 'name', header: 'ICS asset', width: 32, wrap: true },
+    { key: 'techN', header: 'Profile techniques targeting it (#)', width: 13, fmt: '0', center: true },
+    { key: 'share', header: 'Share of ICS profile techniques', width: 13, fmt: '0.0%', center: true },
+    { key: 'exposed', header: 'Targeting techniques with no coverage (live)', width: 16, fmt: '0', live: true, center: true },
+    { key: 'covered', header: 'Targeting techniques fully covered (live)', width: 16, fmt: '0', live: true, center: true },
+    { key: 'platforms', header: 'Platforms', width: 24, wrap: true },
+    { key: 'sectors', header: 'Sectors', width: 16 },
+    { key: 'techs', header: 'Profile techniques targeting it (IDs)', width: 50 },
+    { key: 'description', header: 'Description', width: 80 },
     { key: 'key', header: 'Key', helper: true },
   ];
 
   const TEL_COLS = [
     { key: 'domain', header: 'Domain', width: 11 },
     { key: 'id', header: 'Data component ID', width: 13, link: true },
-    { key: 'name', header: 'Data component', width: 32 },
-    { key: 'techN', header: 'Profile techniques it helps detect (#)', width: 14, fmt: '0' },
-    { key: 'share', header: 'Share of profile techniques', width: 12, fmt: '0%' },
-    { key: 'dsN', header: 'Detection strategies relying on it (#)', width: 14, fmt: '0' },
-    { key: 'deployed', header: 'Deployed strategies using it (live)', width: 14, fmt: '0', live: true },
-    { key: 'logSources', header: 'Log sources', width: 44 },
-    { key: 'details', header: 'What to collect (log source: what to look for)', width: 70 },
+    { key: 'name', header: 'Data component', width: 30, wrap: true },
+    { key: 'techN', header: 'Profile techniques it helps detect (#)', width: 14, fmt: '0', center: true },
+    { key: 'share', header: "Share of its domain's profile techniques", width: 13, fmt: '0.0%', center: true },
+    { key: 'dsN', header: 'Detection strategies relying on it (#)', width: 14, fmt: '0', center: true },
+    { key: 'deployed', header: 'Deployed strategies using it (live)', width: 14, fmt: '0', live: true, center: true },
+    { key: 'logSources', header: 'Log sources', width: 40 },
+    { key: 'details', header: 'What to collect (log source: what to look for; the Analytics sheet lists every entry)', width: 90 },
     { key: 'description', header: 'Description', width: 60 },
     { key: 'key', header: 'Key', helper: true },
+  ];
+
+  const ANALYTIC_COLS = [
+    { key: 'domain', header: 'Domain', width: 11 },
+    { key: 'detId', header: 'Detection ID', width: 12, link: true },
+    { key: 'det', header: 'Detection strategy', width: 40, wrap: true },
+    { key: 'status', header: 'Deployment status (live)', width: 15, live: true },
+    { key: 'anId', header: 'Analytic ID', width: 11, link: true },
+    { key: 'platforms', header: 'Platforms', width: 18, wrap: true },
+    { key: 'dc', header: 'Data component', width: 28 },
+    { key: 'logSource', header: 'Log source', width: 30 },
+    { key: 'lookFor', header: 'What to look for', width: 80 },
+    { key: 'techs', header: 'Profile techniques the strategy covers', width: 24 },
+    { key: 'description', header: 'Analytic description', width: 80 },
+    { key: 'detKey', header: 'Detection key', helper: true },
   ];
 
   const MAP_COLS = [
     { key: 'domain', header: 'Domain', width: 11 },
     { key: 'techId', header: 'Technique ID', width: 12 },
-    { key: 'tech', header: 'Technique', width: 34 },
+    { key: 'tech', header: 'Technique', width: 32, wrap: true },
     { key: 'type', header: 'Control type', width: 17 },
     { key: 'ctlId', header: 'Control ID', width: 11, link: true },
-    { key: 'ctl', header: 'Control', width: 40 },
+    { key: 'ctl', header: 'Control', width: 40, wrap: true },
     { key: 'status', header: 'Control status (live)', width: 15, live: true },
-    { key: 'guidance', header: 'How it applies to this technique', width: 80 },
+    { key: 'guidance', header: 'How it applies to this technique', width: 90 },
     { key: 'techKey', header: 'Technique key', helper: true },
     { key: 'ctlKey', header: 'Control key', helper: true },
+    { key: 'techCovered', header: 'Technique covered by this control type (live)', helper: true },
   ];
   const MAP_TYPE = { mit: 'Mitigation', det: 'Detection strategy' };
 
@@ -168,6 +184,7 @@
   const uniq = a => [...new Set(a)];
   const byAttackId = (a, b) => String(a.attackId).localeCompare(String(b.attackId), undefined, { numeric: true });
   const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''));
+  const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
 
   const MAX_CELL = 32000;   // Excel's limit is 32,767 characters per cell
 
@@ -186,18 +203,41 @@
     return t;
   }
 
-  /** ATT&CK description markdown flattened to plain text. */
+  const ENTITIES = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'", nbsp: ' ' };
+  function decodeEntities(t) {
+    return t.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+      if (e[0] === '#') {
+        const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : Number(e.slice(1));
+        return n > 0 && n < 0x110000 ? String.fromCodePoint(n) : m;
+      }
+      const k = e.toLowerCase();
+      return Object.prototype.hasOwnProperty.call(ENTITIES, k) ? ENTITIES[k] : m;
+    });
+  }
+
+  /**
+   * ATT&CK description markdown flattened to one line of plain text: citations, links, emphasis,
+   * headings, <br> and entities removed; list items become "• "; code spans kept as written.
+   */
   function plain(md) {
     if (!md) return '';
-    return clean(String(md)
+    const spans = [];
+    const t = decodeEntities(String(md)
       .replace(/\s*\(Citation:[^)]*\)/g, '')
       .replace(/\[([^\]]+)\]\((?:https?:\/\/[^)\s]+)\)/g, '$1')
-      .replace(/<\/?code>/g, '')
-      .replace(/`([^`]+)`/g, '$1')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/?code>/gi, '')
+      .replace(/`([^`]+)`/g, (_, c) => '\u0001' + (spans.push(c) - 1) + '\u0002')
+      .replace(/^#{1,6}[ \t]+/gm, '')
       .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim());
+      .replace(/(^|[\s(])\*(?=[^\s*])([^*\n]*?[^\s*\\])\*(?=$|[\s.,;:!?)])/gm, '$1$2')
+      .replace(/\\([*_])/g, '$1')
+      .replace(/\u0001(\d+)\u0002/g, (_, i) => spans[Number(i)]))
+      .replace(/^[ \t]*[*-][ \t]+/gm, '• ')
+      .replace(/\s*\n\s*/g, ' ')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
+    return clean(t);
   }
 
   const link = (text, url) => (url ? { text: clean(text), hyperlink: url } : clean(text));
@@ -230,10 +270,19 @@
   /** Per-sheet conditional-format priority counter. */
   function priorities() { let p = 0; return () => ++p; }
 
+  /**
+   * Page footer: sheet name, profile and date, page numbers. '&' starts a footer code, so it is
+   * doubled; no font-size codes, since '&8' followed by a name like '2015 …' would read as size 82015.
+   */
+  function footer(ws, centre) {
+    const short = centre.length > 150 ? centre.slice(0, 149) + '…' : centre;
+    ws.headerFooter = { oddFooter: `&L&A&C${short.replace(/&/g, '&&')}&RPage &P of &N` };
+  }
+
   // ---------- data preparation (no ExcelJS) ----------
 
   function prepare(ctx) {
-    const P = { domains: [], techniques: [], mitigations: [], detections: [], assets: [], telemetry: [], map: [], profile: [] };
+    const P = { domains: [], techniques: [], mitigations: [], detections: [], assets: [], telemetry: [], analytics: [], map: [], profile: [] };
     const generated = ctx.generatedAt || new Date();
 
     for (const r of ctx.results) {
@@ -243,22 +292,26 @@
       const tacticName = new Map(m.tactics.map(t => [t.shortname, t.name]));
       const mitOn = id => ctx.inPlace.mitigations.has(r.domain + '|' + id);
       const detOn = id => ctx.inPlace.detections.has(r.domain + '|' + id);
-      const name = id => { const o = m.byId.get(id); return o ? o.name : id; };
-      const idName = id => { const o = m.byId.get(id); return o ? (o.attackId ? o.attackId + ' ' : '') + o.name : id; };
+      // Data components can be defined only in another domain's bundle (see SimEngine.analyzeDomain).
+      const lookup = id => m.byId.get(id) || (ctx.entity ? ctx.entity(id) : null);
+      const name = id => { const o = lookup(id); return o ? o.name : id; };
+      const idName = id => { const o = lookup(id); return o ? [o.attackId, o.name].filter(Boolean).join(' ') : id; };
       const total = r.techniques.size;
       const techList = [...r.techniques.values()];
 
       const D = {
-        domain: r.domain, label, result: r, total,
+        domain: r.domain, label, result: r, total, keyOf,
         version: m.meta.version, released: m.meta.modified,
         counts: { covered: 0, mitigated: 0, detected: 0, gap: 0 },
-        subs: 0, tacticsHit: 0, tacticsAll: m.tactics.length,
+        subs: 0, tacticsHit: 0, tacticsAll: m.tactics.length, noMitigation: 0,
         tactics: [], mitTotal: r.mitigations.size, detTotal: r.detections.size, mitOn: 0, detOn: 0,
-        dcTotal: r.dataComponents.size, assetTotal: r.assets.size, topMitigations: [], topDetections: [],
+        dcTotal: r.dataComponents.size, assetTotal: r.assets.size,
+        topMitigations: [], topDetections: [], tierCounts: { mit: new Map(), det: new Map() },
       };
       for (const t of techList) {
         D.counts[t.status]++;
         if (t.tech.isSubtechnique) D.subs++;
+        if (!t.mitigations.length) D.noMitigation++;
       }
       for (const tactic of m.tactics) {
         const ts = techList.filter(t => (t.tech.tactics || []).includes(tactic.shortname));
@@ -271,27 +324,25 @@
       for (const id of r.detections.keys()) if (detOn(id)) D.detOn++;
       P.domains.push(D);
 
+      const viaText = via => via.map(id => { const o = lookup(id); return (o && o.kind === 'campaign' ? 'campaign ' : '') + name(id); }).join(' → ');
+
       // Techniques: most-used first, then by ID.
       techList.sort((a, b) => b.roots.size - a.roots.size || byAttackId(a.tech, b.tech));
       for (const t of techList) {
         const mitIds = uniq(t.mitigations), detIds = uniq(t.detections), assetIds = uniq(t.assets);
         const parent = t.tech.parent ? m.byId.get(t.tech.parent) : null;
         const roots = [...t.roots].map(id => m.byId.get(id)).filter(Boolean).sort(byName);
-        const seen = new Set();
-        const procedures = [];
-        for (const ev of t.evidence) {
-          const k = ev.root + '>' + ev.via.join('>') + '|' + ev.description;
-          if (seen.has(k)) continue;
-          seen.add(k);
-          const via = ev.via.length ? ' (via ' + ev.via.map(id => { const o = m.byId.get(id); return (o && o.kind === 'campaign' ? 'campaign ' : '') + name(id); }).join(' → ') + ')' : '';
-          procedures.push(name(ev.root) + via + ': ' + plain(ev.description));
-        }
+        const procs = SimEngine.procedures(t).map(g => {
+          const via = g.paths.filter(p => p.length).map(viaText);
+          const how = via.length ? ' (' + (g.paths.some(p => !p.length) ? 'directly; ' : '') + 'via ' + via.join('; via ') + ')' : '';
+          return name(g.root) + how + ': ' + plain(g.description);
+        });
         P.techniques.push({
           D, t,
           domain: label,
-          id: link(t.tech.attackId, t.tech.url),
+          id: link(t.tech.attackId || t.tech.id, t.tech.url),
           name: clean(t.tech.name),
-          parent: parent ? clean(parent.attackId + ' ' + parent.name) : '',
+          parent: parent ? clean(idName(parent.id)) : '',
           tactics: clean((t.tech.tactics || []).map(s => tacticName.get(s) || s).join('; ')),
           platforms: clean((t.tech.platforms || []).join(', ')),
           usedN: t.roots.size,
@@ -301,12 +352,10 @@
           detN: detIds.length,
           dets: clean(detIds.map(idName).join('; ')),
           assets: clean(assetIds.map(name).sort().join('; ')),
-          procedures: clean(procedures.join('\n')),
+          procedures: clean(procs.length > 1 ? procs.map((p, i) => `[${i + 1}] ${p}`).join('  ') : procs.join('')),
           description: plain(t.tech.description),
           key: keyOf(t.tech),
           tacticKeys: ';' + (t.tech.tactics || []).join(';') + ';',
-          mitKeys: clean(';' + mitIds.map(id => keyOf(m.byId.get(id))).join(';') + ';'),
-          detKeys: clean(';' + detIds.map(id => keyOf(m.byId.get(id))).join(';') + ';'),
           assetKeys: clean(';' + assetIds.map(id => keyOf(m.byId.get(id))).join(';') + ';'),
           isMitigated: t.isMitigated, isDetected: t.isDetected, status: t.status,
         });
@@ -315,9 +364,10 @@
           const ctl = m.byId.get(id);
           P.map.push({
             domain: label, techId: t.tech.attackId, tech: clean(t.tech.name), type: MAP_TYPE.mit,
-            ctlId: link(ctl.attackId, ctl.url), ctl: clean(ctl.name),
+            ctlId: link(ctl.attackId || ctl.id, ctl.url), ctl: clean(ctl.name),
             guidance: plain(r.mitigations.get(id).guidance.get(t.tech.id)),
-            techKey: keyOf(t.tech), ctlKey: keyOf(ctl), statusNow: mitOn(id) ? MIT.on : MIT.off, kind: 'mit',
+            techKey: keyOf(t.tech), ctlKey: keyOf(ctl), kind: 'mit',
+            statusNow: mitOn(id) ? MIT.on : MIT.off, coveredNow: t.isMitigated,
             sort: [label, t.tech, 0, ctl],
           });
         }
@@ -326,77 +376,96 @@
           const e = r.detections.get(id);
           P.map.push({
             domain: label, techId: t.tech.attackId, tech: clean(t.tech.name), type: MAP_TYPE.det,
-            ctlId: link(ctl.attackId, ctl.url), ctl: clean(ctl.name),
-            guidance: clean('Analytics: ' + (e.analytics.map(a => a.attackId + ' (' + (a.platforms || []).join(', ') + ')').join('; ') || 'none for the selected platforms')),
-            techKey: keyOf(t.tech), ctlKey: keyOf(ctl), statusNow: detOn(id) ? DET.on : DET.off, kind: 'det',
+            ctlId: link(ctl.attackId || ctl.id, ctl.url), ctl: clean(ctl.name),
+            guidance: clean('Analytics: ' + (e.analytics.map(a => a.attackId + ' (' + (a.platforms || []).join(', ') + ')').join('; ') || 'none for the selected platforms')
+              + '. The Analytics sheet lists what to collect for each.'),
+            techKey: keyOf(t.tech), ctlKey: keyOf(ctl), kind: 'det',
+            statusNow: detOn(id) ? DET.on : DET.off, coveredNow: t.isDetected,
             sort: [label, t.tech, 1, ctl],
           });
         }
       }
 
-      // Mitigations: in place at export first, then by priority, then by reach.
+      // Controls: in place at export first, then by priority (sequential rank), then by reach.
       const order = (pri, on) => (a, b) => {
         const pa = pri.get(a[0]), pb = pri.get(b[0]);
         const ka = on(a[0]) ? -1 : pa.rank == null ? 1e6 : pa.rank;
         const kb = on(b[0]) ? -1 : pb.rank == null ? 1e6 : pb.rank;
         return ka - kb || b[1].techniques.size - a[1].techniques.size || byAttackId(a[1].obj, b[1].obj);
       };
+      const controlRow = (e, p, on, V) => ({
+        D, e,
+        rank: on ? null : p.rank,
+        priority: on || p.rank == null ? null : p.tier,
+        domain: label,
+        id: link(e.obj.attackId || e.obj.id, e.obj.url),
+        name: clean(e.obj.name),
+        status: on ? V.on : V.off,
+        statusAtExport: on ? V.on : V.off,
+        techN: e.techniques.size,
+        share: total ? e.techniques.size / total : 0,
+        adds: on ? null : p.adds,
+        cumulative: p.cumulative,
+        key: keyOf(e.obj),
+      });
+
       for (const [id, e] of [...r.mitigations].sort(order(r.mitPriority, mitOn))) {
-        const p = r.mitPriority.get(id);
         const techs = [...e.techniques].map(tid => m.byId.get(tid)).sort(byAttackId);
-        const row = {
-          D, e,
-          priority: mitOn(id) || p.rank == null ? null : p.rank,
-          domain: label,
-          id: link(e.obj.attackId, e.obj.url),
-          name: clean(e.obj.name),
-          status: mitOn(id) ? MIT.on : MIT.off,
-          techN: e.techniques.size,
-          share: total ? e.techniques.size / total : 0,
+        const row = Object.assign(controlRow(e, r.mitPriority.get(id), mitOn(id), MIT), {
           openNow: techs.filter(tech => !r.techniques.get(tech.id).isMitigated).length,
           techs: clean(techs.map(tech => tech.attackId).join(', ')),
           description: plain(e.obj.description),
-          owner: '', notes: '',
-          key: keyOf(e.obj),
-        };
+        });
         P.mitigations.push(row);
-        if (row.priority != null && row.priority <= TOP_ACTIONS) D.topMitigations.push(row);
+        if (row.priority != null) D.tierCounts.mit.set(row.priority, (D.tierCounts.mit.get(row.priority) || 0) + 1);
+        if (row.rank != null && row.rank <= TOP_ACTIONS) D.topMitigations.push(row);
       }
 
       for (const [id, e] of [...r.detections].sort(order(r.detPriority, detOn))) {
-        const p = r.detPriority.get(id);
         const techs = [...e.techniques].map(tid => m.byId.get(tid)).sort(byAttackId);
-        const dcs = [...e.dataComponents].map(dcId => m.byId.get(dcId)).filter(Boolean).sort(byName);
+        const dcs = [...e.dataComponents].map(lookup).filter(Boolean).sort(byName);
         const logSources = uniq(e.analytics.flatMap(a => (a.logSources || []).map(l => l.name).filter(Boolean))).sort();
-        const row = {
-          D, e,
-          priority: detOn(id) || p.rank == null ? null : p.rank,
-          domain: label,
-          id: link(e.obj.attackId, e.obj.url),
-          name: clean(e.obj.name),
-          status: detOn(id) ? DET.on : DET.off,
-          techN: e.techniques.size,
-          share: total ? e.techniques.size / total : 0,
+        const row = Object.assign(controlRow(e, r.detPriority.get(id), detOn(id), DET), {
           openNow: techs.filter(tech => !r.techniques.get(tech.id).isDetected).length,
           anN: e.analytics.length,
           platforms: clean(uniq(e.analytics.flatMap(a => a.platforms || [])).sort().join(', ')),
           dcs: clean(dcs.map(dc => dc.name).join('; ')),
           logSources: clean(logSources.join('; ')),
           techs: clean(techs.map(tech => tech.attackId).join(', ')),
-          analytics: clean(e.analytics.map(a => a.attackId + ' (' + (a.platforms || []).join(', ') + ')').join('; ')),
-          owner: '', notes: '',
-          key: keyOf(e.obj),
-          dcKeys: clean(';' + [...e.dataComponents].map(dcId => m.byId.get(dcId)).filter(Boolean).map(keyOf).join(';') + ';'),
-        };
+          dcKeys: clean(';' + dcs.map(keyOf).join(';') + ';'),
+        });
         P.detections.push(row);
-        if (row.priority != null && row.priority <= TOP_ACTIONS) D.topDetections.push(row);
+        if (row.priority != null) D.tierCounts.det.set(row.priority, (D.tierCounts.det.get(row.priority) || 0) + 1);
+        if (row.rank != null && row.rank <= TOP_ACTIONS) D.topDetections.push(row);
+
+        // Analytics sheet: one row per log-source reference (or one per analytic without any)
+        for (const a of e.analytics) {
+          const refs = (a.logSources || []).length ? a.logSources : [{}];
+          for (const l of refs) {
+            const dc = l.dataComponent ? lookup(l.dataComponent) : null;
+            P.analytics.push({
+              domain: label,
+              detId: link(e.obj.attackId || e.obj.id, e.obj.url),
+              det: clean(e.obj.name),
+              statusNow: detOn(id) ? DET.on : DET.off,
+              anId: link(a.attackId || a.id, a.url),
+              platforms: clean((a.platforms || []).join(', ')),
+              dc: dc ? clean([dc.attackId, dc.name].filter(Boolean).join(' ')) : '',
+              logSource: clean(l.name || ''),
+              lookFor: l.channel && l.channel !== 'None' ? plain(l.channel) : '',
+              techs: clean(techs.map(tech => tech.attackId).join(', ')),
+              description: plain(a.description),
+              detKey: keyOf(e.obj),
+            });
+          }
+        }
       }
 
       for (const [, e] of [...r.assets].sort((a, b) => b[1].techniques.size - a[1].techniques.size || byAttackId(a[1].obj, b[1].obj))) {
         const techs = [...e.techniques].map(tid => r.techniques.get(tid));
         P.assets.push({
           D, e,
-          id: link(e.obj.attackId, e.obj.url),
+          id: link(e.obj.attackId || e.obj.id, e.obj.url),
           name: clean(e.obj.name),
           techN: e.techniques.size,
           share: total ? e.techniques.size / total : 0,
@@ -413,20 +482,21 @@
       for (const [, e] of [...r.dataComponents].sort((a, b) => b[1].techniques.size - a[1].techniques.size || byAttackId(a[1].obj, b[1].obj))) {
         const names = [...e.logSources.keys()].sort();
         const details = names.map(n => {
-          const ch = [...e.logSources.get(n)];
-          return n + (ch.length ? ': ' + ch.slice(0, 8).join(' | ') + (ch.length > 8 ? ' | +' + (ch.length - 8) + ' more' : '') : '');
+          const ch = [...e.logSources.get(n)].map(plain);
+          return n + (ch.length ? ': ' + ch.slice(0, CHANNELS_PER_SOURCE).join(' | ')
+            + (ch.length > CHANNELS_PER_SOURCE ? ` | +${ch.length - CHANNELS_PER_SOURCE} more` : '') : '');
         });
         P.telemetry.push({
           D, e,
           domain: label,
-          id: link(e.obj.attackId, e.obj.url),
+          id: link(e.obj.attackId || e.obj.id, e.obj.url),
           name: clean(e.obj.name),
           techN: e.techniques.size,
           share: total ? e.techniques.size / total : 0,
           dsN: e.strategies.size,
           deployedNow: [...e.strategies].filter(detOn).length,
           logSources: clean(names.join('; ')),
-          details: clean(details.join('\n')),
+          details: clean(details.join('  •  ')),
           description: plain(e.obj.description),
           key: keyOf(e.obj),
         });
@@ -440,6 +510,7 @@
     });
 
     // Threat profile: every selected adversary, with the techniques it contributes.
+    const kindLabel = (kind, o) => (o.softwareType === 'malware' ? 'Malware' : o.softwareType === 'tool' ? 'Tool' : kind.one);
     for (const kind of ctx.kinds) {
       for (const id of ctx.selection[kind.key]) {
         const o = ctx.entity(id);
@@ -448,16 +519,16 @@
         let n = 0;
         for (const D of inDomains) for (const t of D.result.techniques.values()) if (t.roots.has(id)) n++;
         P.profile.push({
-          obj: o, kind: kind.one + (o.softwareType ? ' (' + o.softwareType + ')' : ''),
-          domains: inDomains.map(D => D.label).join(', ') || 'Not in the selected domains',
+          obj: o, kind: kindLabel(kind, o),
+          domains: inDomains.map(D => D.label).join(', ') || 'Not in scope',
           techniques: n,
           aliases: (o.aliases || []).filter(a => a !== o.name).join(', '),
         });
       }
     }
 
+    P.dataComponents = new Set(P.domains.flatMap(D => [...D.result.dataComponents.values()].map(e => e.obj.attackId || e.obj.id))).size;
     P.generated = generated;
-    P.profileNames = P.profile.map(p => p.obj.name);
     return P;
   }
 
@@ -474,12 +545,12 @@
       if (c.helper) col.hidden = true;
       put(ws, 1, i + 1, c.header, {
         font: font({ bold: true, color: { argb: C.white } }),
-        fill: solid(c.input ? C.inputHeader : C.header),
+        fill: solid(c.input || c.inputSoft ? C.inputHeader : C.header),
         alignment: { vertical: 'middle', wrapText: true },
         border: box(C.border),
       });
     });
-    ws.getRow(1).height = 42;
+    ws.getRow(1).height = 58;
 
     rows.forEach((row, ri) => {
       const rn = ri + 2;
@@ -497,18 +568,26 @@
           cell.border = box(C.inputBorder);
           cell.font = font({ bold: true });
         }
-        cell.alignment = { vertical: 'top', horizontal: c.center ? 'center' : undefined };
+        if (c.inputSoft) {
+          cell.fill = solid(C.inputSoft);
+          cell.border = box(C.inputBorder);
+        }
+        cell.alignment = { vertical: 'top', horizontal: c.center ? 'center' : undefined, wrapText: c.wrap || undefined };
       });
     });
 
     if (!rows.length && emptyNote) {
       put(ws, 2, 1, emptyNote, { font: font({ italic: true, color: { argb: C.muted } }) });
     }
-    // The filter range includes the hidden helper columns so sorting keeps each row's keys with it.
-    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: L.cols.length } };
+    // The filter spans the data rows, including the hidden helper columns, so sorting keeps each
+    // row's keys with it. build() adds the _xlnm._FilterDatabase name LibreOffice needs to import it.
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: L.last, column: L.cols.length } };
     ws.views = [{ state: 'frozen', xSplit: freezeCols, ySplit: 1, activeCell: 'A2' }];
-    ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
-    ws.pageSetup.printTitlesRow = '1:1';
+    ws.pageSetup = {
+      orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 2, fitToHeight: 0,
+      printTitlesRow: '1:1', printTitlesColumn: freezeCols ? `A:${colLetter(freezeCols)}` : undefined,
+      margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.3, footer: 0.3 },
+    };
   }
 
   function coverageRules(ws, ref, prio) {
@@ -527,13 +606,11 @@
     });
   }
 
-  function statusInputRules(ws, ref, onValue, prio) {
+  function equalsRule(ws, ref, value, fill, ink, prio) {
     ws.addConditionalFormatting({
       ref,
-      rules: [{
-        type: 'cellIs', operator: 'equal', formulae: [lit(onValue)], priority: prio(),
-        style: { fill: solid(C.goodTint), font: { color: { argb: C.goodInk }, bold: true } },
-      }],
+      rules: [{ type: 'cellIs', operator: 'equal', formulae: [lit(value)], priority: prio(),
+        style: { fill: solid(fill), font: { color: { argb: ink }, bold: true } } }],
     });
   }
 
@@ -556,18 +633,18 @@
 
   // ---------- sheets ----------
 
-  function writeTechniques(ws, P, L, LM) {
-    const n = rn => ({
-      mitigated: `IF(COUNTIFS(${LM.range('techKey')},$${L.letter('key')}${rn},${LM.range('type')},${lit(MAP_TYPE.mit)},${LM.range('status')},${lit(MIT.on)})>0,"Yes","No")`,
-      detected: `IF(COUNTIFS(${LM.range('techKey')},$${L.letter('key')}${rn},${LM.range('type')},${lit(MAP_TYPE.det)},${LM.range('status')},${lit(DET.on)})>0,"Yes","No")`,
+  function writeTechniques(ws, P, L, LMap) {
+    const flags = rn => ({
+      mitigated: `IF(COUNTIFS(${LMap.range('techKey')},$${L.letter('key')}${rn},${LMap.range('type')},${lit(MAP_TYPE.mit)},${LMap.range('status')},${lit(MIT.on)})>0,"Yes","No")`,
+      detected: `IF(COUNTIFS(${LMap.range('techKey')},$${L.letter('key')}${rn},${LMap.range('type')},${lit(MAP_TYPE.det)},${LMap.range('status')},${lit(DET.on)})>0,"Yes","No")`,
     });
     const pick = (rn, out) => {
       const m = `$${L.letter('mitigated')}${rn}="Yes"`, d = `$${L.letter('detected')}${rn}="Yes"`;
       return `IF(AND(${m},${d}),${lit(out.covered)},IF(${m},${lit(out.mitigated)},IF(${d},${lit(out.detected)},${lit(out.gap)})))`;
     };
     const rows = P.techniques.map(row => Object.assign({}, row, {
-      mitigated: rn => F(n(rn).mitigated, row.isMitigated ? 'Yes' : 'No'),
-      detected: rn => F(n(rn).detected, row.isDetected ? 'Yes' : 'No'),
+      mitigated: rn => F(flags(rn).mitigated, row.isMitigated ? 'Yes' : 'No'),
+      detected: rn => F(flags(rn).detected, row.isDetected ? 'Yes' : 'No'),
       coverage: rn => F(pick(rn, COVERAGE), COVERAGE[row.status]),
       code: rn => F(pick(rn, GLYPH), GLYPH[row.status]),
     }));
@@ -575,34 +652,39 @@
     const prio = priorities();
     const cov = L.letter('coverage');
     coverageRules(ws, `${cov}2:${cov}${L.last}`, prio);
-    const yes = col => ws.addConditionalFormatting({
-      ref: `${col}2:${col}${L.last}`,
-      rules: [{ type: 'cellIs', operator: 'equal', formulae: ['"Yes"'], priority: prio(),
-        style: { font: { color: { argb: C.goodInk }, bold: true } } }],
-    });
-    yes(L.letter('mitigated'));
-    yes(L.letter('detected'));
+    for (const key of ['mitigated', 'detected']) {
+      const col = L.letter(key);
+      ws.addConditionalFormatting({
+        ref: `${col}2:${col}${L.last}`,
+        rules: [{ type: 'cellIs', operator: 'equal', formulae: ['"Yes"'], priority: prio(),
+          style: { font: { color: { argb: C.goodInk }, bold: true } } }],
+      });
+    }
   }
 
-  function writeControls(ws, rows, L, LT, kind) {
+  function writeControls(ws, rows, L, LMap, kind) {
     const isMit = kind === 'mit';
     const V = isMit ? MIT : DET;
-    const flag = isMit ? 'mitigated' : 'detected';
-    const keysCol = isMit ? 'mitKeys' : 'detKeys';
+    const k = key => '$' + L.letter(key);
     const out = rows.map(row => Object.assign({}, row, {
-      open: rn => F(`SUMPRODUCT((${LT.range(flag)}="No")*ISNUMBER(SEARCH(";"&$${L.letter('key')}${rn}&";",${LT.range(keysCol)})))`, row.openNow),
+      changed: rn => F(`IF(${k('status')}${rn}<>${k('statusAtExport')}${rn},"Changed","")`, ''),
+      // Techniques this control maps to that no in-place control of the same type covers yet
+      open: rn => F(`COUNTIFS(${LMap.range('ctlKey')},${k('key')}${rn},${LMap.range('techCovered')},"No")`, row.openNow),
     }));
-    writeTable(ws, L, out, { freezeCols: 4, emptyNote: isMit ? 'No ATT&CK mitigations map to this threat profile.' : 'No detection strategies map to this threat profile.' });
+    writeTable(ws, L, out, { freezeCols: 5, emptyNote: isMit ? 'No ATT&CK mitigations map to this threat profile.' : 'No detection strategies map to this threat profile.' });
     const prio = priorities();
     const st = L.letter('status');
-    statusInputRules(ws, `${st}2:${st}${L.last}`, V.on, prio);
+    equalsRule(ws, `${st}2:${st}${L.last}`, V.on, C.goodTint, C.goodInk, prio);
+    const ch = L.letter('changed');
+    equalsRule(ws, `${ch}2:${ch}${L.last}`, 'Changed', C.warnTint, C.warnInk, prio);
     dropdown(ws, L, V.on, V.off, isMit ? 'Implementation status' : 'Deployment status');
   }
 
   function writeAssets(ws, P, L, LT) {
+    const listed = rn => `${LT.range('assetKeys')},"*;"&$${L.letter('key')}${rn}&";*"`;
     const rows = P.assets.map(row => Object.assign({}, row, {
-      exposed: rn => F(`SUMPRODUCT((${LT.range('coverage')}=${lit(COVERAGE.gap)})*ISNUMBER(SEARCH(";"&$${L.letter('key')}${rn}&";",${LT.range('assetKeys')})))`, row.exposedNow),
-      covered: rn => F(`SUMPRODUCT((${LT.range('coverage')}=${lit(COVERAGE.covered)})*ISNUMBER(SEARCH(";"&$${L.letter('key')}${rn}&";",${LT.range('assetKeys')})))`, row.coveredNow),
+      exposed: rn => F(`COUNTIFS(${LT.range('coverage')},${lit(COVERAGE.gap)},${listed(rn)})`, row.exposedNow),
+      covered: rn => F(`COUNTIFS(${LT.range('coverage')},${lit(COVERAGE.covered)},${listed(rn)})`, row.coveredNow),
     }));
     writeTable(ws, L, rows, { freezeCols: 2, emptyNote: 'This threat profile has no ICS techniques, so no ICS assets are targeted. Add ICS groups, software or campaigns in ThreatSim to populate this sheet.' });
     const prio = priorities();
@@ -616,26 +698,33 @@
 
   function writeTelemetry(ws, P, L, LD) {
     const rows = P.telemetry.map(row => Object.assign({}, row, {
-      deployed: rn => F(`SUMPRODUCT((${LD.range('status')}=${lit(DET.on)})*ISNUMBER(SEARCH(";"&$${L.letter('key')}${rn}&";",${LD.range('dcKeys')})))`, row.deployedNow),
+      deployed: rn => F(`COUNTIFS(${LD.range('status')},${lit(DET.on)},${LD.range('dcKeys')},"*;"&$${L.letter('key')}${rn}&";*")`, row.deployedNow),
     }));
     writeTable(ws, L, rows, { freezeCols: 3, emptyNote: 'No detection strategies, and so no telemetry, map to this threat profile.' });
   }
 
-  function writeMap(ws, P, L, LMit, LDet) {
+  function writeAnalytics(ws, P, L, LD) {
+    const rows = P.analytics.map(row => Object.assign({}, row, {
+      status: rn => F(`IFERROR(INDEX(${LD.range('status')},MATCH($${L.letter('detKey')}${rn},${LD.range('key')},0))&"","")`, row.statusNow),
+    }));
+    writeTable(ws, L, rows, { freezeCols: 3, emptyNote: 'No detection analytics map to this threat profile.' });
+    const st = L.letter('status');
+    equalsRule(ws, `${st}2:${st}${L.last}`, DET.on, C.goodTint, C.goodInk, priorities());
+  }
+
+  function writeMap(ws, P, L, LMit, LDet, LT) {
     const rows = P.map.map(row => Object.assign({}, row, {
       status: rn => {
         const T = row.kind === 'mit' ? LMit : LDet;
         return F(`IFERROR(INDEX(${T.range('status')},MATCH($${L.letter('ctlKey')}${rn},${T.range('key')},0))&"","")`, row.statusNow);
       },
+      techCovered: rn => F(`IFERROR(INDEX(${LT.range(row.kind === 'mit' ? 'mitigated' : 'detected')},MATCH($${L.letter('techKey')}${rn},${LT.range('key')},0)),"")`,
+        row.coveredNow ? 'Yes' : 'No'),
     }));
     writeTable(ws, L, rows, { freezeCols: 3, emptyNote: 'No mitigations or detection strategies map to this threat profile.' });
     const prio = priorities();
     const st = L.letter('status');
-    ws.addConditionalFormatting({
-      ref: `${st}2:${st}${L.last}`,
-      rules: [MIT.on, DET.on].map(v => ({ type: 'cellIs', operator: 'equal', formulae: [lit(v)], priority: prio(),
-        style: { fill: solid(C.goodTint), font: { color: { argb: C.goodInk }, bold: true } } })),
-    });
+    for (const v of [MIT.on, DET.on]) equalsRule(ws, `${st}2:${st}${L.last}`, v, C.goodTint, C.goodInk, prio);
   }
 
   // ---------- matrix ----------
@@ -659,10 +748,9 @@
 
     // Title and legends
     put(ws, 1, 1, `${D.label} ATT&CK v${D.version} — threat profile matrix`, { font: font({ size: 14, bold: true }) });
-    put(ws, 2, 1, `Profile: ${P_names(ctx)}. ${ctx.showAll ? 'All techniques are shown; grey ones are not used by the profile.' : 'Profile techniques only; grey parents give context for their sub-techniques.'}`,
+    put(ws, 2, 1, clean(`Profile: ${profileNames(ctx)}. ${ctx.showAll ? 'All techniques are shown; grey ones are not used by the profile.' : 'Profile techniques only; grey parents give context for their sub-techniques.'}`),
       { font: font({ color: { argb: C.muted } }) });
 
-    // Usage legend (technique columns of the first tactics)
     const groups = new Map();
     for (let c = 1; c <= max; c++) {
       const s = usageStep(c, max);
@@ -679,7 +767,6 @@
       });
       lc += 2;
     }
-    // Status legend
     const legend = [['covered', C.good, C.white], ['mitigated', C.warning, C.ink], ['detected', C.warning, C.ink], ['gap', C.critical, C.white]];
     legend.forEach(([k, fill, ink], i) => {
       put(ws, 4, 2 * i + 1, GLYPH[k], { font: font({ bold: true, color: { argb: ink } }), fill: solid(fill), alignment: { horizontal: 'center' } });
@@ -711,14 +798,14 @@
       ws.mergeCells(COUNTS, sc, COUNTS, tc);
       const n = c.usedCount;
       const gaps = lists[i].filter(x => x.used && x.used.status === 'gap').length;
-      const lead = n + ' technique' + (n === 1 ? '' : 's');
+      const lead = plural(n, 'technique', 'techniques');
       put(ws, COUNTS, sc, n ? F(`${lit(lead + ' · ')}&COUNTIF(${S}${FIRST}:${S}${last},"✕")&" uncovered"`, `${lead} · ${gaps} uncovered`) : lead, {
         font: font({ color: { argb: C.muted } }), fill: solid(C.subband), alignment: { vertical: 'middle' },
       });
 
       lists[i].forEach((x, j) => {
         const rowN = FIRST + j;
-        const text = `${x.tech.attackId} ${x.tech.name}`;
+        const text = [x.tech.attackId, x.tech.name].filter(Boolean).join(' ');
         const step = x.used ? usageStep(x.used.roots.size, max) : 0;
         const fill = x.used ? SEQ[step - 1][0] : C.idle;
         const ink = x.used ? SEQ[step - 1][1] : C.muted;
@@ -729,8 +816,7 @@
           border: box(C.white),
         });
         if (x.used) {
-          const key = `${D.label}:${x.tech.attackId}`;
-          put(ws, rowN, sc, F(`IFERROR(INDEX(${LT.range('code')},MATCH(${lit(key)},${LT.range('key')},0)),"")`, GLYPH[x.used.status]), {
+          put(ws, rowN, sc, F(`IFERROR(INDEX(${LT.range('code')},MATCH(${lit(D.keyOf(x.tech))},${LT.range('key')},0)),"")`, GLYPH[x.used.status]), {
             font: font({ size: 9, bold: true }), alignment: { horizontal: 'center', vertical: 'top' }, border: box(C.white),
           });
         } else {
@@ -758,10 +844,14 @@
     ws.getRow(COUNTS).height = 16;
     lines.forEach((l, j) => { ws.getRow(FIRST + j).height = Math.max(15, 12 * l + 3); });
     ws.views = [{ state: 'frozen', xSplit: 0, ySplit: COUNTS, activeCell: 'A' + FIRST, showGridLines: false }];
-    ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9, printTitlesRow: `${HEAD}:${COUNTS}` };
+    // A3 landscape, two pages wide, keeps the 9pt technique names readable on paper.
+    ws.pageSetup = {
+      orientation: 'landscape', paperSize: 8, fitToPage: true, fitToWidth: 2, fitToHeight: 0, printTitlesRow: `${HEAD}:${COUNTS}`,
+      margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.3, footer: 0.3 },
+    };
   }
 
-  function P_names(ctx) {
+  function profileNames(ctx) {
     const names = [];
     for (const kind of ctx.kinds) for (const id of ctx.selection[kind.key]) { const o = ctx.entity(id); if (o) names.push(o.name); }
     return names.length > 8 ? names.slice(0, 8).join(', ') + ' +' + (names.length - 8) + ' more' : names.join(', ');
@@ -782,21 +872,30 @@
 
     let row = 1;
     const text = (r, c, v, f = {}) => put(ws, r, c, v, { font: font(f) });
-    const band = (title) => {
-      for (let c = 1; c <= LAST_COL; c++) put(ws, row, c, c === 1 ? title : null, { fill: solid(C.band), font: font({ bold: true, size: 12, color: { argb: C.white } }), alignment: { vertical: 'middle' } });
+    const band = title => {
+      for (let c = 1; c <= LAST_COL; c++) {
+        put(ws, row, c, c === 1 ? title : null, { fill: solid(C.band), font: font({ bold: true, size: 12, color: { argb: C.white } }), alignment: { vertical: 'middle' } });
+      }
       ws.getRow(row).height = 22;
       row++;
     };
-    const headerRow = (labels, barLabel) => {
+    const legendRuns = (title, items) => ({
+      richText: [{ text: title + '   ', font: font({ bold: true }) }]
+        .concat(...items.map(([fill, label]) => [
+          { text: '■ ', font: font({ size: 12, color: { argb: fill } }) },
+          { text: label + '   ', font: font() },
+        ])),
+    });
+    const headerRow = (labels, barLegend) => {
       labels.forEach((l, i) => put(ws, row, i + 1, l, {
-        font: font({ bold: true, color: { argb: C.ink } }), fill: solid(C.subband),
+        font: font({ bold: true }), fill: solid(C.subband),
         alignment: { vertical: 'middle', wrapText: true, horizontal: i ? 'center' : undefined }, border: { bottom: thin(C.border) },
       }));
-      if (barLabel) {
+      if (barLegend) {
         ws.mergeCells(row, BAR.first, row, LAST_COL);
-        put(ws, row, BAR.first, barLabel, { font: font({ bold: true }), fill: solid(C.subband), alignment: { vertical: 'middle' } });
+        put(ws, row, BAR.first, barLegend, { fill: solid(C.subband), alignment: { vertical: 'middle', wrapText: true } });
       }
-      ws.getRow(row).height = 30;
+      ws.getRow(row).height = 46;
       row++;
     };
     const merged = (r, c1, c2, value, style, height) => {
@@ -804,22 +903,30 @@
       put(ws, r, c1, value, style);
       if (height) ws.getRow(r).height = height;
     };
-    const lines = (s, perLine) => Math.max(1, Math.ceil(String(s).length / perLine) + (String(s).match(/\n/g) || []).length);
+    const lines = (s, perLine) => Math.max(1, Math.ceil(String(s).length / perLine));
+    // Bar cells hold hidden position values that the conditional formats compare against; white
+    // top and bottom borders keep the bars of adjacent rows apart.
     const barCells = r => {
       for (let k = 0; k < BAR.cells; k++) {
-        put(ws, r, BAR.first + k, (k + 0.5) / BAR.cells, { numFmt: ';;;', fill: solid(C.track) });
+        put(ws, r, BAR.first + k, (k + 0.5) / BAR.cells, {
+          numFmt: ';;;', fill: solid(C.track),
+          border: { top: { style: 'medium', color: { argb: C.white } }, bottom: { style: 'medium', color: { argb: C.white } } },
+        });
       }
-      ws.getRow(r).height = 18;
+      if (!ws.getRow(r).height) ws.getRow(r).height = 18;
     };
-    const stackedBarRules = (r1, r2) => {
+    // Stacked bars for rows r1..r2. Columns B..E hold Techniques, Mitigated + detected, Mitigated only
+    // and Detected only, read from each bar's own row, or from row `src` when given.
+    const stackedBarRules = (r1, r2, src) => {
       if (r2 < r1) return;
       const a = `${barA}${r1}`;
+      const ref = c => (src ? `$${c}$${src}` : `$${c}${r1}`);
       ws.addConditionalFormatting({
         ref: `${barA}${r1}:${barZ}${r2}`,
         rules: [
-          { type: 'expression', priority: prio(), formulae: [`AND($B${r1}>0,${a}<$C${r1}/$B${r1})`], style: { fill: solid(C.good) } },
-          { type: 'expression', priority: prio(), formulae: [`AND($B${r1}>0,${a}<($C${r1}+$D${r1}+$E${r1})/$B${r1})`], style: { fill: solid(C.warning) } },
-          { type: 'expression', priority: prio(), formulae: [`$B${r1}>0`], style: { fill: solid(C.critical) } },
+          { type: 'expression', priority: prio(), formulae: [`AND(${ref('B')}>0,${a}<${ref('C')}/${ref('B')})`], style: { fill: solid(C.good) } },
+          { type: 'expression', priority: prio(), formulae: [`AND(${ref('B')}>0,${a}<(${ref('C')}+${ref('D')}+${ref('E')})/${ref('B')})`], style: { fill: solid(C.warning) } },
+          { type: 'expression', priority: prio(), formulae: [`${ref('B')}>0`], style: { fill: solid(C.critical) } },
         ],
       });
     };
@@ -831,61 +938,48 @@
       });
     };
     const pct = (num, den) => (den ? num / den : '');
+    const READINESS_LEGEND = legendRuns('Readiness bar (live)', [[C.good, COVERAGE.covered], [C.warning, 'Partial'], [C.critical, COVERAGE.gap]]);
+    const center = { horizontal: 'center', vertical: 'top' };
+    const sum = k => P.domains.reduce((n, D) => n + D[k], 0);
+    const totalTech = sum('total');
+    const all = { covered: 0, mitigated: 0, detected: 0, gap: 0 };
+    for (const D of P.domains) for (const k of Object.keys(all)) all[k] += D.counts[k];
 
     // Title block
     text(row, 1, 'ATT&CK threat readiness workpaper', { size: 18, bold: true });
     ws.getRow(row).height = 28;
     row++;
-    text(row, 1, clean('Threat profile: ' + P_names(ctx)), { size: 12, bold: true });
+    text(row, 1, clean('Threat profile: ' + profileNames(ctx)), { size: 12, bold: true });
     row++;
     const when = P.generated.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
     text(row, 1, clean(`Generated ${when} with ThreatSim · ` + P.domains.map(D => `${D.label} ATT&CK v${D.version}`).join(' · ')), { color: { argb: C.muted } });
     row += 2;
     merged(row, 1, 8, 'How to use this workpaper: set each mitigation\'s Implementation status (In Place / Not In Place) on the Mitigations sheet, '
-      + 'and each detection strategy\'s Deployment status (Deployed / Not Deployed) on the Detections sheet. They are the yellow drop-down cells. '
-      + 'Every readiness figure and bar in this workbook recalculates from those choices.',
-    { font: font({ bold: true, color: { argb: C.warnInk } }), fill: solid(C.input), alignment: { wrapText: true, vertical: 'middle' }, border: box(C.inputBorder) }, 48);
+      + 'and each detection strategy\'s Deployment status (Deployed / Not Deployed) on the Detections sheet, using the yellow drop-down cells '
+      + '(they turn green when In Place or Deployed). Figures marked (live) and every readiness bar recalculate from those choices; '
+      + 'figures marked (at export) were fixed when the workpaper was exported.',
+    { font: font({ bold: true, color: { argb: C.warnInk } }), fill: solid(C.input), alignment: { wrapText: true, vertical: 'middle' }, border: box(C.inputBorder) }, 62);
     row += 2;
 
-    // Profile at a glance (static)
-    band('Profile at a glance');
-    const sum = k => P.domains.reduce((n, D) => n + D[k], 0);
-    const totalTech = sum('total');
-    const glance = [
-      ['Adversaries in profile', P.profile.length, P_names(ctx)],
-      ['Techniques in scope', totalTech, `${sum('subs')} sub-techniques · ${sum('tacticsHit')} of ${sum('tacticsAll')} tactics`],
-      ['Mitigations mapped', sum('mitTotal'), 'ATT&CK mitigations that address at least one profile technique'],
-      ['Detection strategies mapped', sum('detTotal'), 'ATT&CK detection strategies for the profile techniques'],
-      ['Data components (telemetry)', sum('dcTotal'), 'Log data the detection strategies rely on'],
-    ];
-    if (P.domains.some(D => D.assetTotal)) glance.push(['ICS assets targeted', sum('assetTotal'), 'Assets targeted by the profile\'s ICS techniques']);
-    for (const [label, value, note] of glance) {
-      text(row, 1, label, { bold: true });
-      put(ws, row, 2, value, { font: font({ size: 12, bold: true }), numFmt: '#,##0', alignment: { horizontal: 'center' } });
-      text(row, 3, clean(note), { color: { argb: C.muted } });
-      row++;
-    }
-    row++;
-
-    // Readiness (live)
+    // ---- Readiness (live) ----
     band('Readiness');
     const headline = row;
-    const tableFirst = headline + 4;   // first data row of the readiness table (fixed below)
+    const tableFirst = headline + 3;   // first data row of the readiness table (asserted below)
     put(ws, row, 1, 'Overall readiness', { font: font({ bold: true, size: 12 }), alignment: { vertical: 'middle' } });
-    const all = { covered: 0, mitigated: 0, detected: 0, gap: 0 };
-    for (const D of P.domains) for (const k of Object.keys(all)) all[k] += D.counts[k];
     const readyNow = pct(all.covered + all.mitigated + all.detected, totalTech);
     put(ws, row, 2, F(`$G$${tableFirst}`, readyNow), { font: font({ size: 22, bold: true }), numFmt: '0%', alignment: { horizontal: 'center', vertical: 'middle' } });
     merged(row, 3, 8, F(`$C$${tableFirst}&" of "&$B$${tableFirst}&" techniques are mitigated and detected, "&($D$${tableFirst}+$E$${tableFirst})&" are partly covered and "&$F$${tableFirst}&" have no coverage."`,
       `${all.covered} of ${totalTech} techniques are mitigated and detected, ${all.mitigated + all.detected} are partly covered and ${all.gap} have no coverage.`),
     { font: font({ size: 11 }), alignment: { wrapText: true, vertical: 'middle' } });
     ws.getRow(row).height = 36;
+    barCells(row);
+    stackedBarRules(row, row, tableFirst);
     row++;
     merged(row, 1, 8, 'Readiness = share of profile techniques with at least one mitigation In Place or detection strategy Deployed. Fully covered = both.',
       { font: font({ italic: true, color: { argb: C.muted } }) });
-    row += 2;
+    row++;
 
-    headerRow(['Scope', 'Techniques', COVERAGE.covered, COVERAGE.mitigated, COVERAGE.detected, COVERAGE.gap, 'Readiness', 'Fully covered'], 'Readiness bar');
+    headerRow(['Scope', 'Techniques', COVERAGE.covered, COVERAGE.mitigated, COVERAGE.detected, COVERAGE.gap, 'Readiness', 'Fully covered'], READINESS_LEGEND);
     if (row !== tableFirst) throw new Error('Summary layout drifted');
     const T = key => LT.range(key);
     const scopeRows = [];
@@ -893,10 +987,9 @@
     for (const D of P.domains) scopeRows.push({ label: D.label + ' ATT&CK', domain: D.label, counts: D.counts, total: D.total });
     const firstScope = row;
     for (const s of scopeRows) {
-      const crit = s.domain ? `${T('domain')},${lit(s.domain)},` : '';
-      const count = status => s.domain
-        ? `COUNTIFS(${crit}${T('coverage')},${lit(COVERAGE[status])})`
-        : `COUNTIF(${T('coverage')},${lit(COVERAGE[status])})`;
+      const count = status => (s.domain
+        ? `COUNTIFS(${T('domain')},${lit(s.domain)},${T('coverage')},${lit(COVERAGE[status])})`
+        : `COUNTIF(${T('coverage')},${lit(COVERAGE[status])})`);
       text(row, 1, s.label, { bold: true });
       put(ws, row, 2, F(s.domain ? `COUNTIF(${T('domain')},${lit(s.domain)})` : `COUNTA(${T('key')})`, s.total), { font: font(), numFmt: '#,##0', alignment: { horizontal: 'center' } });
       ['covered', 'mitigated', 'detected', 'gap'].forEach((k, i) => {
@@ -909,33 +1002,25 @@
       row++;
     }
     stackedBarRules(firstScope, row - 1);
-
-    // Legend
-    text(row, 1, 'Bar legend', { color: { argb: C.muted } });
-    ws.mergeCells(row, 2, row, 3);
-    put(ws, row, 2, COVERAGE.covered, { font: font({ bold: true, color: { argb: C.white } }), fill: solid(C.good), alignment: { horizontal: 'center' } });
-    put(ws, row, 4, 'Partial', { font: font({ bold: true, color: { argb: C.ink } }), fill: solid(C.warning), alignment: { horizontal: 'center' } });
-    put(ws, row, 5, COVERAGE.gap, { font: font({ bold: true, color: { argb: C.white } }), fill: solid(C.critical), alignment: { horizontal: 'center' } });
-    row += 2;
+    row++;
 
     // Controls (live)
-    headerRow(['Controls', 'Mapped', 'In place / deployed', 'Not yet', 'Share in place'], 'Progress');
+    headerRow(['Controls', 'Mapped', 'In place / deployed', 'Not yet', 'Share in place'], legendRuns('Progress (live)', [[C.good, 'In place / deployed'], [C.track, 'Not yet']]));
     const ctlRows = [];
-    const M = key => LM.range(key), Dt = key => LD.range(key);
-    if (P.domains.length > 1) {
-      ctlRows.push({ label: 'Mitigations in place', R: M, on: MIT.on, total: sum('mitTotal'), now: sum('mitOn') });
-      for (const D of P.domains) ctlRows.push({ label: `  ${D.label} mitigations`, R: M, on: MIT.on, domain: D.label, total: D.mitTotal, now: D.mitOn });
-      ctlRows.push({ label: 'Detection strategies deployed', R: Dt, on: DET.on, total: sum('detTotal'), now: sum('detOn') });
-      for (const D of P.domains) ctlRows.push({ label: `  ${D.label} detection strategies`, R: Dt, on: DET.on, domain: D.label, total: D.detTotal, now: D.detOn });
-    } else {
-      ctlRows.push({ label: 'Mitigations in place', R: M, on: MIT.on, total: sum('mitTotal'), now: sum('mitOn') });
-      ctlRows.push({ label: 'Detection strategies deployed', R: Dt, on: DET.on, total: sum('detTotal'), now: sum('detOn') });
-    }
+    const addCtl = (label, perDomain, L, on, totalKey, onKey) => {
+      ctlRows.push({ label, L, on, total: sum(totalKey), now: sum(onKey) });
+      if (P.domains.length > 1) {
+        for (const D of P.domains) ctlRows.push({ label: `  ${D.label} ${perDomain}`, L, on, domain: D.label, total: D[totalKey], now: D[onKey] });
+      }
+    };
+    addCtl('Mitigations in place', 'mitigations', LM, MIT.on, 'mitTotal', 'mitOn');
+    addCtl('Detection strategies deployed', 'detection strategies', LD, DET.on, 'detTotal', 'detOn');
     const firstCtl = row;
     for (const c of ctlRows) {
+      const R = key => c.L.range(key);
       text(row, 1, c.label, { bold: !c.domain });
-      put(ws, row, 2, F(c.domain ? `COUNTIF(${c.R('domain')},${lit(c.domain)})` : `COUNTA(${c.R('key')})`, c.total), { font: font(), numFmt: '#,##0', alignment: { horizontal: 'center' } });
-      put(ws, row, 3, F(c.domain ? `COUNTIFS(${c.R('domain')},${lit(c.domain)},${c.R('status')},${lit(c.on)})` : `COUNTIF(${c.R('status')},${lit(c.on)})`, c.now),
+      put(ws, row, 2, F(c.domain ? `COUNTIF(${R('domain')},${lit(c.domain)})` : `COUNTA(${R('key')})`, c.total), { font: font(), numFmt: '#,##0', alignment: { horizontal: 'center' } });
+      put(ws, row, 3, F(c.domain ? `COUNTIFS(${R('domain')},${lit(c.domain)},${R('status')},${lit(c.on)})` : `COUNTIF(${R('status')},${lit(c.on)})`, c.now),
         { font: font({ bold: true }), numFmt: '#,##0', alignment: { horizontal: 'center' } });
       put(ws, row, 4, F(`$B${row}-$C${row}`, c.total - c.now), { font: font(), numFmt: '#,##0', alignment: { horizontal: 'center' } });
       put(ws, row, 5, F(`IF($B${row}=0,"",$C${row}/$B${row})`, pct(c.now, c.total)), { font: font(), numFmt: '0%', alignment: { horizontal: 'center' } });
@@ -945,9 +1030,56 @@
     progressBarRules(firstCtl, row - 1);
     row++;
 
-    // Coverage by tactic (live)
+    // ---- Recommended next actions (ranked at export, live status) ----
+    band(`Recommended next actions (top ${TOP_ACTIONS} per domain, ranked at export)`);
+    const actions = (kind, L, V) => {
+      const isMit = kind === 'mit';
+      text(row, 1, isMit ? 'Mitigations to put in place' : 'Detection strategies to deploy', { bold: true, size: 11 });
+      row++;
+      headerRow([isMit ? 'Mitigation' : 'Detection strategy', 'ID', 'Domain', 'Priority (at export)', 'Profile techniques', 'Adds (at export)',
+        isMit ? 'Still unmitigated (live)' : 'Still undetected (live)', 'Status (live)']);
+      const first = row;
+      const note = msg => merged(row++, 1, 8, msg, { font: font({ italic: true, color: { argb: C.muted } }), alignment: { wrapText: true, vertical: 'top' } }, 15 * lines(msg, 125) + 3);
+      for (const D of P.domains) {
+        const list = isMit ? D.topMitigations : D.topDetections;
+        const total = isMit ? D.mitTotal : D.detTotal, on = isMit ? D.mitOn : D.detOn;
+        const noun = isMit ? 'mitigation' : 'detection strategy', nouns = isMit ? 'mitigations' : 'detection strategies';
+        if (!list.length) {
+          note(!total ? `${D.label}: no ATT&CK ${nouns} map to this profile's techniques.`
+            : on === total ? `${D.label}: all ${plural(total, noun, nouns)} were already ${V.on} at export.`
+            : isMit ? `${D.label}: the ${plural(total - on, noun, nouns)} not ${V.on} at export address no technique that is still unmitigated.`
+            : `${D.label}: the ${plural(total - on, noun, nouns)} not ${V.on} at export cover no technique that is still undetected.`);
+          continue;
+        }
+        for (const a of list) {
+          put(ws, row, 1, a.name, { font: font(), alignment: { wrapText: true, vertical: 'top' } });
+          put(ws, row, 2, a.id, { font: font({ color: { argb: C.link }, underline: true }), alignment: { vertical: 'top' } });
+          put(ws, row, 3, a.domain, { font: font(), alignment: { vertical: 'top' } });
+          put(ws, row, 4, a.priority, { font: font({ bold: true }), alignment: center });
+          put(ws, row, 5, a.techN, { font: font(), alignment: center });
+          put(ws, row, 6, a.adds, { font: font(), alignment: center });
+          put(ws, row, 7, F(`IFERROR(INDEX(${L.range('open')},MATCH(${lit(a.key)},${L.range('key')},0)),"")`, a.openNow), { font: font(), alignment: center, fill: solid(C.live) });
+          put(ws, row, 8, F(`IFERROR(INDEX(${L.range('status')},MATCH(${lit(a.key)},${L.range('key')},0))&"","")`, a.status), { font: font({ bold: true }), alignment: center });
+          ws.getRow(row).height = 13 * lines(a.name, 42) + 3;   // column A holds ~42 characters per line
+          row++;
+        }
+        // Equal scores share a priority number; say so when the tie runs past the list.
+        const lastTier = list[list.length - 1].priority;
+        const inTier = (isMit ? D.tierCounts.mit : D.tierCounts.det).get(lastTier) || 0;
+        const shown = list.filter(a => a.priority === lastTier).length;
+        if (inTier > shown) {
+          note(`${D.label}: ${inTier} ${nouns} share priority ${lastTier}; the ${shown} shown are ordered by reach, documented procedure examples, then ATT&CK ID.`);
+        }
+      }
+      if (row > first) equalsRule(ws, `H${first}:H${row - 1}`, V.on, C.goodTint, C.goodInk, prio);
+      row++;
+    };
+    actions('mit', LM, MIT);
+    actions('det', LD, DET);
+
+    // ---- Coverage by tactic (live) ----
     band('Coverage by tactic');
-    headerRow(['Tactic', 'Techniques', COVERAGE.covered, COVERAGE.mitigated, COVERAGE.detected, COVERAGE.gap, 'Readiness', 'Fully covered'], 'Readiness bar');
+    headerRow(['Tactic', 'Techniques', COVERAGE.covered, COVERAGE.mitigated, COVERAGE.detected, COVERAGE.gap, 'Readiness', 'Fully covered'], READINESS_LEGEND);
     for (const D of P.domains) {
       if (P.domains.length > 1) {
         for (let c = 1; c <= 8; c++) put(ws, row, c, c === 1 ? `${D.label} ATT&CK` : null, { font: font({ bold: true }), fill: solid(C.idle) });
@@ -955,11 +1087,10 @@
       }
       const first = row;
       for (const tr of D.tactics) {
-        const inTactic = `ISNUMBER(SEARCH(${lit(';' + tr.tactic.shortname + ';')},${T('tacticKeys')}))`;
-        const inDomain = `(${T('domain')}=${lit(D.label)})`;
-        const count = status => `SUMPRODUCT(${inDomain}*${inTactic}*(${T('coverage')}=${lit(COVERAGE[status])}))`;
+        const scope = `${T('domain')},${lit(D.label)},${T('tacticKeys')},${lit('*;' + tr.tactic.shortname + ';*')}`;
+        const count = status => `COUNTIFS(${scope},${T('coverage')},${lit(COVERAGE[status])})`;
         text(row, 1, clean(tr.tactic.name), { color: { argb: tr.total ? C.ink : C.muted } });
-        put(ws, row, 2, F(`SUMPRODUCT(${inDomain}*${inTactic})`, tr.total), { font: font(), numFmt: '#,##0', alignment: { horizontal: 'center' } });
+        put(ws, row, 2, F(`COUNTIFS(${scope})`, tr.total), { font: font(), numFmt: '#,##0', alignment: { horizontal: 'center' } });
         ['covered', 'mitigated', 'detected', 'gap'].forEach((k, i) => {
           put(ws, row, 3 + i, F(count(k), tr.counts[k]), { font: font(), numFmt: '#,##0', alignment: { horizontal: 'center' } });
         });
@@ -973,56 +1104,45 @@
     }
     row++;
 
-    // Recommended next actions (ranked at export, live status)
-    band(`Recommended next actions (top ${TOP_ACTIONS} per domain, ranked at export)`);
-    const actions = (title, list, L, V, openHeader) => {
-      text(row, 1, title, { bold: true, size: 11 });
-      row++;
-      headerRow([title.startsWith('Mitigations') ? 'Mitigation' : 'Detection strategy', 'ID', 'Domain', 'Priority', 'Profile techniques', openHeader, 'Status (live)']);
-      if (!list.length) {
-        merged(row, 1, 8, 'Nothing to recommend: every mapped control was already in place when this workpaper was exported.', { font: font({ italic: true, color: { argb: C.muted } }) });
-        row += 2;
-        return;
-      }
-      const first = row;
-      const top = { vertical: 'top' }, mid = { vertical: 'top', horizontal: 'center' };
-      for (const a of list) {
-        const key = a.key;
-        put(ws, row, 1, clean(a.name), { font: font(), alignment: { wrapText: true, vertical: 'top' } });
-        put(ws, row, 2, a.id, { font: font({ color: { argb: C.link }, underline: true }), alignment: top });
-        put(ws, row, 3, a.domain, { font: font(), alignment: top });
-        put(ws, row, 4, a.priority, { font: font({ bold: true }), alignment: mid });
-        put(ws, row, 5, a.techN, { font: font(), alignment: mid });
-        put(ws, row, 6, F(`IFERROR(INDEX(${L.range('open')},MATCH(${lit(key)},${L.range('key')},0)),"")`, a.openNow), { font: font(), alignment: mid, fill: solid(C.live) });
-        put(ws, row, 7, F(`IFERROR(INDEX(${L.range('status')},MATCH(${lit(key)},${L.range('key')},0))&"","")`, a.status), { font: font({ bold: true }), alignment: mid });
-        ws.getRow(row).height = 13 * lines(a.name, 36) + 3;   // column A holds ~36 characters per line
-        row++;
-      }
-      ws.addConditionalFormatting({
-        ref: `G${first}:G${row - 1}`,
-        rules: [{ type: 'cellIs', operator: 'equal', formulae: [lit(V.on)], priority: prio(),
-          style: { fill: solid(C.goodTint), font: { color: { argb: C.goodInk }, bold: true } } }],
-      });
-      row++;
-    };
-    actions('Mitigations to put in place', P.domains.flatMap(D => D.topMitigations), LM, MIT, 'Unmitigated techniques it addresses (live)');
-    actions('Detection strategies to deploy', P.domains.flatMap(D => D.topDetections), LD, DET, 'Undetected techniques it covers (live)');
-
-    // Threat profile
-    band('Threat profile');
-    headerRow(['Adversary', 'Type', 'ATT&CK ID', 'Domains', 'Techniques contributed', 'Aliases']);
-    for (const p of P.profile) {
-      put(ws, row, 1, link(p.obj.name, p.obj.url), { font: font({ color: { argb: C.link }, underline: true }) });
-      text(row, 2, clean(p.kind));
-      text(row, 3, p.obj.attackId || '');
-      text(row, 4, p.domains);
-      put(ws, row, 5, p.techniques, { font: font(), alignment: { horizontal: 'center' } });
-      text(row, 6, clean(p.aliases), { color: { argb: C.muted } });
+    // ---- Profile at a glance (at export) ----
+    band('Profile at a glance');
+    const dcShared = sum('dcTotal') - P.dataComponents;
+    const glance = [
+      ['Adversaries in profile', P.profile.length, profileNames(ctx)],
+      ['Techniques in scope', totalTech, `${sum('subs')} sub-techniques · ${sum('tacticsHit')} of ${sum('tacticsAll')} tactics`],
+      ['Techniques with no ATT&CK mitigation', sum('noMitigation'),
+        (P.domains.length > 1 ? P.domains.map(D => `${D.noMitigation} ${D.label}`).join(', ') + '. ' : '') + 'Detection is the only lever for these.'],
+      ['Mitigations mapped', sum('mitTotal'), 'ATT&CK mitigations that address at least one profile technique'],
+      ['Detection strategies mapped', sum('detTotal'), 'ATT&CK detection strategies for the profile techniques'],
+      ['Data components (telemetry)', P.dataComponents, 'Distinct log data types the detection strategies rely on'
+        + (dcShared > 0 ? ` (${dcShared} used by both domains, so the Telemetry sheet has ${sum('dcTotal')} rows)` : '')],
+    ];
+    if (P.domains.some(D => D.assetTotal)) glance.push(['ICS assets targeted', sum('assetTotal'), 'Assets targeted by the profile\'s ICS techniques']);
+    for (const [label, value, note] of glance) {
+      text(row, 1, label, { bold: true });
+      put(ws, row, 2, value, { font: font({ size: 12, bold: true }), numFmt: '#,##0', alignment: { horizontal: 'center' } });
+      text(row, 3, clean(note), { color: { argb: C.muted } });
       row++;
     }
     row++;
 
-    // Scope and method
+    // ---- Threat profile ----
+    band('Threat profile');
+    headerRow(['Adversary', 'Type', 'ATT&CK ID', 'Domains', 'Techniques contributed', 'Aliases']);
+    for (const p of P.profile) {
+      const top = { vertical: 'top' };
+      put(ws, row, 1, link(p.obj.name, p.obj.url), { font: font({ color: { argb: C.link }, underline: true }), alignment: top });
+      put(ws, row, 2, p.kind, { font: font(), alignment: top });
+      put(ws, row, 3, p.obj.attackId || '', { font: font(), alignment: top });
+      put(ws, row, 4, p.domains, { font: font(), alignment: { vertical: 'top', wrapText: true } });
+      put(ws, row, 5, p.techniques, { font: font(), alignment: center });
+      const aliases = clean(p.aliases);
+      merged(row, 6, 8, aliases || null, { font: font({ color: { argb: C.muted } }), alignment: { wrapText: true, vertical: 'top' } }, 13 * lines(aliases, 40) + 3);
+      row++;
+    }
+    row++;
+
+    // ---- Scope and method ----
     band('Scope and method');
     const opts = ctx.opts;
     const platforms = opts.platforms && opts.platforms.size ? [...opts.platforms].join(', ') : 'All platforms';
@@ -1032,10 +1152,12 @@
       ['Scope', `Techniques used by the selected adversaries. Software they use: ${opts.viaSoftware ? 'included' : 'not included'}. Campaigns attributed to selected groups: ${opts.viaCampaigns ? 'included' : 'not included'}. Platforms: ${platforms}.`],
       ['Readiness', 'Share of profile techniques with at least one mitigation In Place or detection strategy Deployed. Fully covered means both. Partial means one of the two.'],
       ['Coverage', 'A technique is mitigated when any mitigation mapped to it on the Control Map sheet is In Place, and detected when any detection strategy mapped to it is Deployed.'],
-      ['Priority', 'Ranked by ThreatSim at export: each step picks the control covering the most still-uncovered techniques, weighting techniques used by more selected adversaries higher. Priorities do not change when you edit statuses here; the live columns do. Re-export from ThreatSim to re-rank.'],
+      ['(live) and (at export)', 'Figures marked (live) are formulas that recalculate when you change a status. Figures marked (at export), including priorities, were fixed when ThreatSim exported this workbook. "Status at export" keeps the original statuses, and "Changed since export" flags the rows you have edited.'],
+      ['Priority', 'Ranked by ThreatSim at export: each step picks the control covering the most still-uncovered techniques, weighting techniques used by more selected adversaries higher. Controls with equal scores share a priority number and are listed by reach, documented procedure examples, then ATT&CK ID. Adds is how many techniques a pick newly covers; Cumulative is the share covered once it is added. To re-rank after editing statuses here, set the same statuses in ThreatSim and export again (owners, dates and notes are not carried over).'],
       ['Sheets', 'Matrix: techniques by tactic, shaded by usage, with a live status column. Techniques: every profile technique with live coverage. '
-        + 'Mitigations and Detections: set statuses here (yellow drop-downs). ICS Assets: assets targeted by ICS techniques and how exposed they are. '
-        + 'Telemetry: data components and log sources the detection strategies rely on. Control Map: each technique-to-control link the coverage formulas use.'],
+        + 'Mitigations and Detections: set statuses here (yellow drop-downs), with owner, target date and notes. ICS Assets: assets targeted by ICS techniques and how exposed they are. '
+        + 'Telemetry: data components and log sources the detection strategies rely on. Analytics: every analytic and what to look for in each log source. '
+        + 'Control Map: each technique-to-control link the coverage formulas use.'],
       ['Limits', 'ATT&CK does not enumerate every adversary behaviour, and some techniques have no ATT&CK mitigation. Readiness here measures coverage of ATT&CK mappings, not overall security.'],
       ['ATT&CK licence', `© ${year} The MITRE Corporation. This work is reproduced and distributed with the permission of The MITRE Corporation. `
         + 'License: The MITRE Corporation (MITRE) hereby grants you a non-exclusive, royalty-free license to use ATT&CK® for research, development, and commercial purposes. '
@@ -1043,15 +1165,17 @@
         + 'MITRE ATT&CK and ATT&CK are registered trademarks of The MITRE Corporation. Source: https://github.com/mitre-attack/attack-stix-data'],
     ];
     for (const [label, value] of method) {
-      text(row, 1, label, { bold: true });
+      put(ws, row, 1, label, { font: font({ bold: true }), alignment: { vertical: 'top' } });
       merged(row, 2, 8, clean(value), { font: font(), alignment: { wrapText: true, vertical: 'top' } }, 15 * lines(value, 95) + 3);
-      ws.getCell(row, 1).alignment = { vertical: 'top' };
       row++;
     }
 
     ws.views = [{ showGridLines: false, activeCell: 'A1' }];
-    ws.pageSetup = { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9,
-      margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 } };
+    ws.pageSetup = {
+      orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+      printArea: `A1:${barZ}${row - 1}`,
+      margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.3, footer: 0.3 },
+    };
   }
 
   // ---------- workbook ----------
@@ -1064,7 +1188,7 @@
     wb.created = P.generated;
     wb.modified = P.generated;
     wb.title = 'ATT&CK threat readiness workpaper';
-    wb.subject = clean('Threat profile: ' + P_names(ctx));
+    wb.subject = clean('Threat profile: ' + profileNames(ctx));
     wb.calcProperties.fullCalcOnLoad = true;
 
     // Sheets in tab order; filled once every table's size (and so every range) is known.
@@ -1075,6 +1199,7 @@
     const detections = wb.addWorksheet(SHEET.detections, { properties: { tabColor: { argb: C.inputTab } } });
     const assets = wb.addWorksheet(SHEET.assets);
     const telemetry = wb.addWorksheet(SHEET.telemetry);
+    const analytics = wb.addWorksheet(SHEET.analytics);
     const map = wb.addWorksheet(SHEET.map);
 
     const LT = layout(SHEET.techniques, TECH_COLS, P.techniques.length);
@@ -1082,16 +1207,44 @@
     const LD = layout(SHEET.detections, DET_COLS, P.detections.length);
     const LA = layout(SHEET.assets, ASSET_COLS, P.assets.length);
     const LTel = layout(SHEET.telemetry, TEL_COLS, P.telemetry.length);
+    const LAn = layout(SHEET.analytics, ANALYTIC_COLS, P.analytics.length);
     const LMap = layout(SHEET.map, MAP_COLS, P.map.length);
 
     writeSummary(summary, ctx, P, { T: LT, M: LM, D: LD });
     P.domains.forEach((D, i) => writeMatrix(matrices[i], D, ctx, LT));
     writeTechniques(techniques, P, LT, LMap);
-    writeControls(mitigations, P.mitigations, LM, LT, 'mit');
-    writeControls(detections, P.detections, LD, LT, 'det');
+    writeControls(mitigations, P.mitigations, LM, LMap, 'mit');
+    writeControls(detections, P.detections, LD, LMap, 'det');
     writeAssets(assets, P, LA, LT);
     writeTelemetry(telemetry, P, LTel, LD);
-    writeMap(map, P, LMap, LM, LD);
+    writeAnalytics(analytics, P, LAn, LD);
+    writeMap(map, P, LMap, LM, LD, LT);
+
+    const stamp = profileNames(ctx) + ' · generated ' + P.generated.toLocaleDateString(undefined, { dateStyle: 'medium' });
+    for (const ws of wb.worksheets) footer(ws, stamp);
+
+    // LibreOffice imports an autoFilter only when the sheet also has the sheet-local, hidden
+    // _xlnm._FilterDatabase name that Excel writes. ExcelJS cannot write hidden names, so add
+    // them to workbook.xml as it is written.
+    const xmlText = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const filterNames = [[techniques, LT], [mitigations, LM], [detections, LD], [assets, LA], [telemetry, LTel], [analytics, LAn], [map, LMap]]
+      .map(([ws, L]) => `<definedName name="_xlnm._FilterDatabase" localSheetId="${wb.worksheets.indexOf(ws)}" hidden="1">`
+        + xmlText(`${quoteSheet(ws.name)}!$A$1:$${colLetter(L.cols.length)}$${L.last}`) + '</definedName>')
+      .join('');
+    const xlsx = wb.xlsx;
+    const addWorkbook = xlsx.addWorkbook.bind(xlsx);
+    xlsx.addWorkbook = async (zip, model) => {
+      const append = zip.append;
+      zip.append = function (data, options) {
+        if (options && options.name === 'xl/workbook.xml' && typeof data === 'string') {
+          data = data.includes('</definedNames>')
+            ? data.replace('</definedNames>', () => filterNames + '</definedNames>')
+            : data.replace('<calcPr', () => '<definedNames>' + filterNames + '</definedNames><calcPr');
+        }
+        return append.call(this, data, options);
+      };
+      try { return await addWorkbook(zip, model); } finally { zip.append = append; }
+    };
     return wb;
   }
 
@@ -1105,7 +1258,7 @@
         const s = document.createElement('script');
         s.src = EXCELJS_SRC;
         s.onload = () => (global.ExcelJS ? resolve(global.ExcelJS) : reject(new Error('ExcelJS loaded but did not register')));
-        s.onerror = () => reject(new Error('Could not load ' + EXCELJS_SRC));
+        s.onerror = () => { s.remove(); reject(new Error('Could not load ' + EXCELJS_SRC)); };
         document.head.append(s);
       }).catch(e => { loading = null; throw e; });
     }
@@ -1113,7 +1266,10 @@
   }
 
   function fileName(ctx, when) {
-    const slug = P_names(ctx).toLowerCase().replace(/\+\d+ more/, 'and-more').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48).replace(/-$/, '');
+    const names = [];
+    for (const kind of ctx.kinds) for (const id of ctx.selection[kind.key]) { const o = ctx.entity(id); if (o) names.push(o.name); }
+    const part = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24).replace(/-$/, '');
+    const slug = names.slice(0, 3).map(part).filter(Boolean).join('-') + (names.length > 3 ? `-and-${names.length - 3}-more` : '');
     const pad = n => String(n).padStart(2, '0');
     const stamp = `${when.getFullYear()}${pad(when.getMonth() + 1)}${pad(when.getDate())}-${pad(when.getHours())}${pad(when.getMinutes())}`;
     return `threatsim-workpaper-${slug || 'profile'}-${stamp}.xlsx`;

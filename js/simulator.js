@@ -112,6 +112,11 @@
     catalogs: null,
   };
 
+  // Workbook export progress. Kept out of the DOM because renderTabs() rebuilds the export buttons
+  // on every tab switch or posture change.
+  const EXPORT_LABEL = 'Export workpaper';
+  const exportUi = { busy: false, msg: '', err: false };
+
   function persist() {
     const s = {
       domains: [...state.domains],
@@ -175,7 +180,7 @@
 
   function analyze() {
     state.results = activeModels()
-      .map(m => SimEngine.analyzeDomain(m, state.selection, state.opts))
+      .map(m => SimEngine.analyzeDomain(m, state.selection, Object.assign({ resolve: entity }, state.opts)))
       .filter(r => r.roots.length);
     for (const r of state.results) {
       r.statusCounts = SimEngine.applyPosture(r, state.inPlace);
@@ -391,8 +396,9 @@
   }
 
   function totals() {
-    const t = { tech: 0, subs: 0, tacticsHit: 0, tacticsAll: 0, mit: 0, mitIn: 0, det: 0, detIn: 0, dc: 0,
+    const t = { tech: 0, subs: 0, tacticsHit: 0, tacticsAll: 0, mit: 0, mitIn: 0, det: 0, detIn: 0, dc: 0, dcRows: 0,
                 covered: 0, mitigated: 0, detected: 0, gap: 0 };
+    const dcIds = new Set();   // data components are shared across domains: count each once
     for (const r of state.results) {
       t.tech += r.techniques.size;
       const hit = new Set();
@@ -404,11 +410,13 @@
       t.tacticsAll += r.model.tactics.length;
       t.mit += r.mitigations.size;
       t.det += r.detections.size;
-      t.dc += r.dataComponents.size;
+      t.dcRows += r.dataComponents.size;
+      for (const e of r.dataComponents.values()) dcIds.add(e.obj.attackId || e.obj.id);
       for (const id of r.mitigations.keys()) if (state.inPlace.mitigations.has(r.domain + '|' + id)) t.mitIn++;
       for (const id of r.detections.keys()) if (state.inPlace.detections.has(r.domain + '|' + id)) t.detIn++;
       for (const k of Object.keys(STATUS)) t[k] += r.statusCounts[k];
     }
+    t.dc = dcIds.size;
     return t;
   }
 
@@ -436,7 +444,8 @@
       tile('Techniques in scope', fmtN(t.tech), fmtN(t.subs) + ' sub-techniques · ' + t.tacticsHit + ' of ' + t.tacticsAll + ' tactics'),
       tile('Mitigations', fmtN(t.mit), fmtN(t.mitIn) + ' in place'),
       tile('Detection strategies', fmtN(t.det), fmtN(t.detIn) + ' deployed'),
-      tile('Data components', fmtN(t.dc), 'telemetry the detections rely on'),
+      tile('Data components', fmtN(t.dc), 'telemetry the detections rely on'
+        + (t.dcRows > t.dc ? ` · ${fmtN(t.dcRows - t.dc)} used by both domains` : '')),
       hero,
     );
   }
@@ -460,12 +469,12 @@
         on: { click: () => { state.ui.tab = t.key; state.ui.filter = ''; persist(); renderTabs(); renderTab(); } },
       }, t.label, n != null ? el('span', { class: 'count', text: ' ' + fmtN(n) }) : null);
     }), el('span', { class: 'exports' },
-      el('span', { class: 'export-status', id: 'exportStatus', role: 'status' }),
-      el('button', { class: 'primary', id: 'exportWorkpaper', text: 'Export workpaper (.xlsx)',
-        title: 'Excel workpaper: executive summary, matrix, techniques, mitigations, detections, ICS assets and telemetry, with editable statuses',
+      el('button', { class: 'primary', id: 'exportWorkpaper', text: EXPORT_LABEL,
+        title: 'Excel workpaper (.xlsx): executive summary, matrix, techniques, mitigations, detections, ICS assets and telemetry, with editable statuses',
         on: { click: exportWorkpaper } }),
-      el('button', { text: 'CSV', title: 'Techniques with their mitigations, detections and coverage', on: { click: exportCsv } }),
-      el('button', { text: 'Navigator layer', title: 'JSON layer for MITRE ATT&CK Navigator, one file per domain', on: { click: exportLayers } })));
+      el('button', { text: 'CSV', title: 'Techniques with their mitigations, detections and coverage (.csv)', on: { click: exportCsv } }),
+      el('button', { text: 'Navigator', title: 'Layer for MITRE ATT&CK Navigator, one JSON file per domain', on: { click: exportLayers } })));
+    syncExportUi();
   }
 
   function renderTab() {
@@ -508,7 +517,7 @@
     let max = 1;
     for (const t of r.techniques.values()) max = Math.max(max, t.roots.size);
 
-    tools.append(
+    append(tools, [
       domainSwitch(),
       el('div', { class: 'seg' }, ...[['usage', 'Usage'], ['coverage', 'Coverage']].map(([k, label]) => el('button', {
         'aria-pressed': String(mode === k), text: label,
@@ -520,7 +529,7 @@
           ? el('span', { class: 'scale' }, '1', el('span', { class: 'ramp' }, ...[1, 2, 3, 4, 5, 6].map(i => el('span', { style: `background:var(--seq-${i})` }))), max + ' adversaries')
           : el('span', { class: 'hint', text: 'Shade shows how many selected adversaries use a technique.' }))
         : el('span', { class: 'legend' }, ...Object.entries(STATUS).map(([k, s]) => el('span', { class: 'stat-badge' }, el('span', { class: 'ic ' + k, text: s.icon }), s.label))),
-    );
+    ]);
 
     const cols = SimEngine.matrixColumns(r, { showAll: state.ui.showAll });
     const cell = (tech, used, isSub) => {
@@ -692,7 +701,7 @@
       filterBox('Filter ' + kind, rerender),
       el('button', { text: 'Mark top 5 ' + label, title: 'Simulate adding the five highest-priority items', on: { click: () => applyTop(5) } }),
       el('button', { text: 'Reset', title: 'Clear ' + label + ' for this profile', on: { click: reset } }),
-      el('span', { class: 'hint', text: 'Priority: pick the item covering the most uncovered techniques, weighting techniques used by more selected adversaries higher, then repeat.' }),
+      el('span', { class: 'hint', text: 'Priority: pick the item covering the most uncovered techniques, weighting techniques used by more selected adversaries higher, then repeat. Equal scores share a number.' }),
     );
   }
 
@@ -706,7 +715,7 @@
     return [
       { key: 'pri', label: 'Priority', num: true,
         sort: x => { const p = x.r[priKey].get(x.id); return p.rank == null ? (x.on ? -1 : 9999 - x.e.techniques.size / 1000) : p.rank; },
-        render: x => { const p = x.r[priKey].get(x.id); return x.on ? el('span', { class: 'small', text: 'in place' }) : p.rank == null ? el('span', { class: 'muted', text: '—' }) : '#' + p.rank; } },
+        render: x => { const p = x.r[priKey].get(x.id); return x.on ? el('span', { class: 'small', text: 'in place' }) : p.rank == null ? el('span', { class: 'muted', text: '—' }) : '#' + p.tier; } },
       { key: 'on', label: checkLabel, render: x => {
         const cb = el('input', { type: 'checkbox', checked: x.on, 'aria-label': checkLabel + ': ' + x.e.obj.name });
         cb.addEventListener('change', () => toggleInPlace(setKey, x.r.domain, x.id, cb.checked));
@@ -759,7 +768,7 @@
         { key: 'cum', label: 'Cumulative', num: true, sort: x => x.r.detPriority.get(x.id).cumulative, render: x => pct(x.r.detPriority.get(x.id).cumulative, 1) },
         { key: 'an', label: 'Analytics', num: true, sort: x => x.e.analytics.length, render: x => String(x.e.analytics.length) },
         { key: 'dc', label: 'Data components', render: x => {
-          const names = [...x.e.dataComponents].map(id => (r.model.byId.get(id) || {}).name).filter(Boolean).sort();
+          const names = [...x.e.dataComponents].map(id => (r.model.byId.get(id) || entity(id) || {}).name).filter(Boolean).sort();
           return el('div', { class: 'tags' }, names.slice(0, 3).map(n => el('span', { class: 'tag', text: n })),
             names.length > 3 ? el('span', { class: 'tag', title: names.slice(3).join(', '), text: '+' + (names.length - 3) }) : null);
         } },
@@ -871,7 +880,7 @@
         (a.logSources || []).length ? el('table', { class: 'ls' },
           el('thead', {}, el('tr', {}, el('th', { text: 'Data component' }), el('th', { text: 'Log source' }), el('th', { text: 'What to look for' }))),
           el('tbody', {}, ...a.logSources.map(l => el('tr', {},
-            el('td', { text: (model.byId.get(l.dataComponent) || {}).name || '—' }),
+            el('td', { text: (model.byId.get(l.dataComponent) || entity(l.dataComponent) || {}).name || '—' }),
             el('td', { class: 'mono', text: l.name || '—' }),
             el('td', { text: l.channel && l.channel !== 'None' ? l.channel : '—' }))))) : null,
       )));
@@ -894,19 +903,20 @@
 
     if (t) {
       const byRoot = new Map();
-      for (const ev of t.evidence) {
-        if (!byRoot.has(ev.root)) byRoot.set(ev.root, []);
-        byRoot.get(ev.root).push(ev);
+      for (const g of SimEngine.procedures(t)) {
+        if (!byRoot.has(g.root)) byRoot.set(g.root, []);
+        byRoot.get(g.root).push(g);
       }
-      out.push(el('section', {}, el('h3', { text: 'Used in this profile by' }), ...[...byRoot].map(([rootId, evs]) => {
+      const pathText = via => (via.length
+        ? 'via ' + via.map(id => { const o = model.byId.get(id); return (o.kind === 'campaign' ? 'campaign ' : '') + o.name; }).join(' → ')
+        : 'directly');
+      out.push(el('section', {}, el('h3', { text: 'Used in this profile by' }), ...[...byRoot].map(([rootId, groups]) => {
         const root = model.byId.get(rootId);
-        const seen = new Set();
         return el('div', { class: 'item' },
           el('div', { class: 'hd' }, el('strong', { text: root.name }), el('span', { class: 'mono muted', text: root.attackId })),
-          ...evs.filter(ev => { const k = ev.via.join('>') + '|' + ev.description; if (seen.has(k)) return false; seen.add(k); return true; })
-            .map(ev => el('div', { style: 'margin-top:6px' },
-              el('div', { class: 'kicker', text: ev.via.length ? 'via ' + ev.via.map(id => { const o = model.byId.get(id); return (o.kind === 'campaign' ? 'campaign ' : '') + o.name; }).join(' → ') : 'directly' }),
-              el('div', { class: 'md' }, md(ev.description)))));
+          ...groups.map(g => el('div', { style: 'margin-top:6px' },
+            el('div', { class: 'kicker', text: g.paths.map(pathText).join(' · ') }),
+            el('div', { class: 'md' }, md(g.description)))));
       })));
     }
 
@@ -971,8 +981,9 @@
     const all = (ds.analyticRefs || []).map(x => model.byId.get(x)).filter(a => a && a.active);
     const shown = all.filter(a => SimEngine.platformMatch(a.platforms, state.opts.platforms));
     const out = drawerHead('Detection strategy · ' + domainLabel(domain), ds, el('div', { style: 'margin-top:6px' }, postureToggle('detections', domain, id, 'Deployed')));
-    out.push(el('section', {}, el('h3', { text: 'Analytics' }), analyticsBlock(model, shown, all.length - shown.length)));
-    out.lastChild.querySelector('details').open = true;
+    const analytics = el('section', {}, el('h3', { text: 'Analytics' }), analyticsBlock(model, shown, all.length - shown.length));
+    analytics.querySelector('details').open = true;
+    out.push(analytics);
     if (e) {
       out.push(el('section', {}, el('h3', { text: 'Profile techniques it detects (' + e.techniques.size + ')' }), ...profileTechniqueList(domain, e.techniques)));
     }
@@ -981,7 +992,7 @@
 
   function dataComponentDrawer(domain, id) {
     const model = state.models[domain];
-    const dc = model.byId.get(id);
+    const dc = model.byId.get(id) || entity(id);   // may be defined only in another domain's bundle
     const e = resultFor(domain).dataComponents.get(id);
     const out = drawerHead('Data component · ' + domainLabel(domain), dc);
     out.push(el('div', { class: 'md', style: 'margin-top:10px' }, md(dc.description)));
@@ -1029,27 +1040,56 @@
     return names.length > 4 ? names.slice(0, 4).join(', ') + ' +' + (names.length - 4) : names.join(', ');
   }
 
-  async function exportWorkpaper(e) {
-    const btn = e.currentTarget;
+  /** Reflect exportUi on the (possibly re-rendered) button and the status line. */
+  function syncExportUi() {
+    const btn = $('#exportWorkpaper');
+    if (btn) {
+      // aria-disabled rather than disabled, so keyboard focus stays on the button while it works
+      btn.setAttribute('aria-disabled', String(exportUi.busy));
+      btn.setAttribute('aria-busy', String(exportUi.busy));
+      btn.textContent = exportUi.busy ? 'Building workpaper…' : EXPORT_LABEL;
+    }
     const status = $('#exportStatus');
-    const label = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Building workpaper…';
-    status.textContent = '';
-    status.classList.remove('err');
+    if (status) {
+      status.textContent = exportUi.msg;
+      status.title = exportUi.msg;
+      status.classList.toggle('err', exportUi.err);
+      status.hidden = !exportUi.msg;
+    }
+  }
+
+  /** One frame, so the busy label paints before the synchronous build; a timer covers hidden tabs. */
+  const nextPaint = () => new Promise(resolve => {
+    const t = setTimeout(resolve, 100);
+    requestAnimationFrame(() => setTimeout(() => { clearTimeout(t); resolve(); }, 0));
+  });
+
+  async function exportWorkpaper(e) {
+    // Ignore clicks while an export runs, and the second click of a double-click.
+    if (exportUi.busy || (e && e.detail > 1)) return;
+    // Snapshot what the workbook reads now: changes made while ExcelJS loads must not leak into this export.
+    // state.results is safe by reference because analyze() replaces it rather than mutating it.
+    const ctx = {
+      results: state.results,
+      inPlace: { mitigations: new Set(state.inPlace.mitigations), detections: new Set(state.inPlace.detections) },
+      opts: Object.assign({}, state.opts, { platforms: new Set(state.opts.platforms) }),
+      selection: Object.fromEntries(Object.entries(state.selection).map(([k, v]) => [k, new Set(v)])),
+      showAll: state.ui.showAll,
+      kinds: PICK_TABS, entity, domainLabel,
+      generatedAt: new Date(),
+    };
+    Object.assign(exportUi, { busy: true, msg: '', err: false });
+    syncExportUi();
     try {
-      const name = await Workpaper.download({
-        results: state.results, inPlace: state.inPlace, opts: state.opts, showAll: state.ui.showAll,
-        selection: state.selection, kinds: PICK_TABS, entity, domainLabel,
-      });
-      status.textContent = 'Saved ' + name;
+      await nextPaint();
+      const name = await Workpaper.download(ctx);
+      exportUi.msg = 'Exported ' + name;
     } catch (err) {
       console.error(err);
-      status.textContent = 'Export failed: ' + err.message;
-      status.classList.add('err');
+      Object.assign(exportUi, { msg: 'Export failed: ' + err.message, err: true });
     } finally {
-      btn.disabled = false;
-      btn.textContent = label;
+      exportUi.busy = false;
+      syncExportUi();
     }
   }
 

@@ -153,7 +153,9 @@
     for (const [dsId, d] of detections) {
       for (const a of d.analytics) {
         for (const l of a.logSources || []) {
-          const dc = byId.get(l.dataComponent);
+          // Data components are shared objects: an ICS analytic can reference one that only the
+          // Enterprise bundle defines, so fall back to the other loaded domains (opts.resolve).
+          const dc = byId.get(l.dataComponent) || (opts.resolve ? opts.resolve(l.dataComponent) : null);
           if (!dc) continue;
           let e = dataComponents.get(dc.id);
           if (!e) dataComponents.set(dc.id, e = { obj: dc, techniques: new Set(), strategies: new Set(), logSources: new Map() });
@@ -193,12 +195,19 @@
    * Greedy priority order: repeatedly pick the control whose still-uncovered
    * techniques carry the most weight, where a technique weighs as much as the
    * number of selected adversaries using it. Controls already in place count as
-   * picked first. Returns Map id -> { rank, adds, cumulative } (rank null when a
-   * control is in place or adds nothing).
+   * picked first. Exact ties go to the control with more reach, then more
+   * documented procedure examples behind the techniques it adds, then the lower
+   * ATT&CK ID, so the order never depends on the order adversaries were picked.
+   *
+   * Returns Map id -> { rank, tier, adds, score, cumulative }:
+   *  rank  sequential pick order (null when in place or adding nothing); drives "Mark top 5"
+   *  tier  shared rank for picks with equal score (1, 1, 1, 4, ...); what tables show
+   *  adds  techniques newly covered; score  their weight; cumulative  share covered after this pick
    */
   function prioritize(entries, inPlaceKeys, domain, techniques) {
-    const totalTechniques = techniques.size;
+    const total = techniques.size || 1;
     const weight = tid => (techniques.get(tid) ? techniques.get(tid).roots.size : 1);
+    const documented = tid => (techniques.get(tid) ? techniques.get(tid).evidence.length : 0);
     const covered = new Set();
     const out = new Map();
     const remaining = [];
@@ -209,24 +218,49 @@
         remaining.push([id, e]);
       }
     }
-    for (const [id, e] of entries) {
-      if (inPlaceKeys.has(domain + '|' + id)) out.set(id, { rank: null, adds: 0, cumulative: covered.size / (totalTechniques || 1) });
+    for (const [id] of entries) {
+      if (inPlaceKeys.has(domain + '|' + id)) out.set(id, { rank: null, tier: null, adds: 0, score: 0, cumulative: covered.size / total });
     }
-    let rank = 1;
+    const better = (a, b) => a.score - b.score || a.reach - b.reach || a.documented - b.documented
+      || String(b.obj.attackId).localeCompare(String(a.obj.attackId), undefined, { numeric: true });
+    let rank = 0, tier = 0, lastScore = null;
     while (remaining.length) {
-      let best = -1, bestScore = -1, bestAdds = 0;
-      for (let i = 0; i < remaining.length; i++) {
-        let score = 0, adds = 0;
-        for (const t of remaining[i][1].techniques) if (!covered.has(t)) { score += weight(t); adds++; }
-        if (score > bestScore || (score === bestScore && remaining[i][1].techniques.size > remaining[best][1].techniques.size)) {
-          best = i; bestScore = score; bestAdds = adds;
+      let best = null;
+      remaining.forEach(([id, e], i) => {
+        const c = { i, obj: e.obj, score: 0, adds: 0, documented: 0, reach: e.techniques.size };
+        for (const t of e.techniques) {
+          if (!covered.has(t)) { c.score += weight(t); c.adds++; c.documented += documented(t); }
         }
-      }
-      const [id, e] = remaining.splice(best, 1)[0];
+        if (!best || better(c, best) > 0) best = c;
+      });
+      const [id, e] = remaining.splice(best.i, 1)[0];
       for (const t of e.techniques) covered.add(t);
-      out.set(id, { rank: bestAdds > 0 ? rank++ : null, adds: bestAdds, cumulative: covered.size / (totalTechniques || 1) });
+      let r = null, tr = null;
+      if (best.adds > 0) {
+        r = ++rank;
+        tr = best.score === lastScore ? tier : (tier = r);
+        lastScore = best.score;
+      }
+      out.set(id, { rank: r, tier: tr, adds: best.adds, score: best.score, cumulative: covered.size / total });
     }
     return out;
+  }
+
+  /**
+   * A technique's procedure examples, merged when the same adversary reaches the same
+   * source (itself, a campaign or a piece of software) and text by more than one path.
+   * Returns [{ root, source, description, paths: [via arrays] }].
+   */
+  function procedures(t) {
+    const out = new Map();
+    for (const ev of t.evidence) {
+      const source = ev.via.length ? ev.via[ev.via.length - 1] : ev.root;
+      const k = ev.root + '|' + source + '|' + ev.description;
+      let g = out.get(k);
+      if (!g) out.set(k, g = { root: ev.root, source, description: ev.description, paths: [] });
+      if (!g.paths.some(p => p.join('>') === ev.via.join('>'))) g.paths.push(ev.via);
+    }
+    return [...out.values()];
   }
 
   /** Techniques arranged for the matrix: per tactic, parents with nested sub-techniques. */
@@ -257,5 +291,5 @@
     });
   }
 
-  global.SimEngine = { loadModel, analyzeDomain, applyPosture, prioritize, matrixColumns, directTechniqueCount, platformMatch };
+  global.SimEngine = { loadModel, analyzeDomain, applyPosture, prioritize, procedures, matrixColumns, directTechniqueCount, platformMatch };
 })(window);
