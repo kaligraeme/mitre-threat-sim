@@ -37,14 +37,15 @@ posture are saved in the browser's localStorage.
 
 ## Excel workpaper
 
-**Export workpaper** on the Simulator tab writes the current profile and posture to an `.xlsx` workbook:
+**Export workpaper**, in the toolbar beside the threat profile on the Simulator tab, writes the current
+profile and posture to an `.xlsx` workbook:
 
 | Sheet | Contents |
 |---|---|
-| Executive Summary | Overall readiness with the **readiness bar**, readiness per domain, controls in place, the top 10 recommended mitigations and detection strategies per domain, coverage by tactic, the profile at a glance, the threat profile, and scope and method notes |
+| Executive Summary | Overall readiness with the **readiness bar**, readiness per domain, controls in place, how many statuses have changed since export, the top 10 recommended mitigations and detection strategies per domain, coverage by tactic, the profile at a glance, the threat profile, and scope and method notes |
 | Matrix (Enterprise) / Matrix (ICS) | ATT&CK matrix of the profile, shaded by how many selected adversaries use each technique, with a live coverage column (✓ mitigated + detected, M mitigated only, D detected only, ✕ no coverage) |
 | Techniques | Every profile technique: tactics, platforms, who uses it, its mitigations and detection strategies, live coverage, procedure examples |
-| Mitigations | **Implementation status** drop-down (*In Place* / *Not In Place*), owner, target date and notes; status at export and a live *Changed* flag; priority, adds and cumulative coverage at export; live count of unmitigated techniques it addresses |
+| Mitigations | **Implementation status** drop-down (*In Place* / *Not In Place*), owner, target date and notes; status at export and a live *Changed* flag; priority, adds, weighted score and cumulative coverage at export; live count of unmitigated techniques it addresses |
 | Detections | **Deployment status** drop-down (*Deployed* / *Not Deployed*), the same tracking and priority columns, analytics, data components and log sources |
 | ICS Assets | Assets targeted by the profile's ICS techniques, with live counts of exposed and fully covered techniques |
 | Telemetry | Data components and log sources the detection strategies rely on, with a live count of deployed strategies using each |
@@ -60,7 +61,10 @@ are listed by reach, documented procedure examples, then ATT&CK ID.
 
 The bars are conditional formatting on cells, so they work in Excel, LibreOffice Calc and Google Sheets.
 Every formula also stores its value at export, so file previews that don't recalculate still show the
-right figures. Sheets print landscape with page footers; the matrices print on A3.
+right figures. Sheets print landscape with page footers. The summary sets its own page breaks so
+headings stay with their rows; tables repeat their header row and key columns on every page and leave
+long description columns out of the print area; the matrices print on A3, split between tactics when
+they are too wide for one page.
 
 The workbook is built in the browser with [ExcelJS](https://github.com/exceljs/exceljs) 4.4.0 (MIT,
 `js/vendor/exceljs.min.js`, licence in `js/vendor/exceljs.LICENSE.txt`). It loads only when you first

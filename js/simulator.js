@@ -32,6 +32,7 @@
   }
 
   const fmtN = n => (n ?? 0).toLocaleString();
+  const plural = (n, one, many) => fmtN(n) + ' ' + (n === 1 ? one : many);
   const pct = (a, b) => b ? Math.round((a / b) * 100) + '%' : '0%';
   const domainLabel = id => (AttackDB.DOMAINS.find(d => d.id === id) || { label: id }).label;
   const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
@@ -112,9 +113,7 @@
     catalogs: null,
   };
 
-  // Workbook export progress. Kept out of the DOM because renderTabs() rebuilds the export buttons
-  // on every tab switch or posture change.
-  const EXPORT_LABEL = 'Export workpaper';
+  // Workbook export progress, reflected on the static export toolbar by syncExportUi().
   const exportUi = { busy: false, msg: '', err: false };
 
   function persist() {
@@ -337,6 +336,7 @@
     const has = selectionSize() > 0;
     $('#emptyProfile').hidden = has && state.results.length > 0;
     $('#analysis').hidden = !(has && state.results.length);
+    $('#exportBar').hidden = !(has && state.results.length);
     if (has && !state.results.length) {
       $('#emptyProfile').hidden = false;
       $('#emptyProfile').querySelector('p').textContent =
@@ -396,9 +396,9 @@
   }
 
   function totals() {
-    const t = { tech: 0, subs: 0, tacticsHit: 0, tacticsAll: 0, mit: 0, mitIn: 0, det: 0, detIn: 0, dc: 0, dcRows: 0,
+    const t = { tech: 0, subs: 0, tacticsHit: 0, tacticsAll: 0, mit: 0, mitIn: 0, det: 0, detIn: 0, dc: 0, dcShared: 0,
                 covered: 0, mitigated: 0, detected: 0, gap: 0 };
-    const dcIds = new Set();   // data components are shared across domains: count each once
+    const dcDomains = new Map();   // data components are shared across domains: count each once
     for (const r of state.results) {
       t.tech += r.techniques.size;
       const hit = new Set();
@@ -410,13 +410,16 @@
       t.tacticsAll += r.model.tactics.length;
       t.mit += r.mitigations.size;
       t.det += r.detections.size;
-      t.dcRows += r.dataComponents.size;
-      for (const e of r.dataComponents.values()) dcIds.add(e.obj.attackId || e.obj.id);
+      for (const e of r.dataComponents.values()) {
+        const k = e.obj.attackId || e.obj.id;
+        dcDomains.set(k, (dcDomains.get(k) || 0) + 1);
+      }
       for (const id of r.mitigations.keys()) if (state.inPlace.mitigations.has(r.domain + '|' + id)) t.mitIn++;
       for (const id of r.detections.keys()) if (state.inPlace.detections.has(r.domain + '|' + id)) t.detIn++;
       for (const k of Object.keys(STATUS)) t[k] += r.statusCounts[k];
     }
-    t.dc = dcIds.size;
+    t.dc = dcDomains.size;
+    t.dcShared = [...dcDomains.values()].filter(n => n > 1).length;
     return t;
   }
 
@@ -445,7 +448,7 @@
       tile('Mitigations', fmtN(t.mit), fmtN(t.mitIn) + ' in place'),
       tile('Detection strategies', fmtN(t.det), fmtN(t.detIn) + ' deployed'),
       tile('Data components', fmtN(t.dc), 'telemetry the detections rely on'
-        + (t.dcRows > t.dc ? ` · ${fmtN(t.dcRows - t.dc)} used by both domains` : '')),
+        + (t.dcShared ? ` · ${fmtN(t.dcShared)} used by more than one domain` : '')),
       hero,
     );
   }
@@ -468,13 +471,7 @@
         role: 'tab', 'aria-selected': String(state.ui.tab === t.key),
         on: { click: () => { state.ui.tab = t.key; state.ui.filter = ''; persist(); renderTabs(); renderTab(); } },
       }, t.label, n != null ? el('span', { class: 'count', text: ' ' + fmtN(n) }) : null);
-    }), el('span', { class: 'exports' },
-      el('button', { class: 'primary', id: 'exportWorkpaper', text: EXPORT_LABEL,
-        title: 'Excel workpaper (.xlsx): executive summary, matrix, techniques, mitigations, detections, ICS assets and telemetry, with editable statuses',
-        on: { click: exportWorkpaper } }),
-      el('button', { text: 'CSV', title: 'Techniques with their mitigations, detections and coverage (.csv)', on: { click: exportCsv } }),
-      el('button', { text: 'Navigator', title: 'Layer for MITRE ATT&CK Navigator, one JSON file per domain', on: { click: exportLayers } })));
-    syncExportUi();
+    }));
   }
 
   function renderTab() {
@@ -781,8 +778,11 @@
   }
 
   function renderTelemetry(tools, body) {
+    const unresolved = new Set(state.results.flatMap(r => [...r.unresolvedDataComponents]));
     tools.append(filterBox('Filter data components or log sources', () => renderTabBody(renderTelemetry)),
-      el('span', { class: 'hint', text: 'The logs your detections need, ranked by how many profile techniques they help detect.' }));
+      el('span', { class: 'hint', text: 'The logs your detections need, ranked by how many profile techniques they help detect.' + (unresolved.size
+        ? ` ${plural(unresolved.size, 'data component used by these analytics is', 'data components used by these analytics are')} not in the loaded ATT&CK data; pull Enterprise ATT&CK on the Data page to list them.`
+        : '') }));
     perDomain(body, r => {
       const rows = [...r.dataComponents].map(([id, e]) => ({ r, id, e }))
         .filter(x => matches(x.e.obj, [...x.e.logSources.keys()].join(' ')));
@@ -999,7 +999,7 @@
     out.push(el('section', {}, el('h3', { text: 'Log sources used by these detections' }),
       el('table', { class: 'ls' }, el('tbody', {}, ...[...e.logSources].map(([name, channels]) => el('tr', {},
         el('td', { class: 'mono', text: name }),
-        el('td', { text: [...channels].slice(0, 6).join(' · ') + (channels.size > 6 ? ' · +' + (channels.size - 6) + ' more' : '') || '—' })))))));
+        el('td', { text: [...channels].sort((a, b) => a.localeCompare(b)).slice(0, 6).join(' · ') + (channels.size > 6 ? ' · +' + (channels.size - 6) + ' more' : '') || '—' })))))));
     out.push(el('section', {}, el('h3', { text: 'Detection strategies relying on it (' + e.strategies.size + ')' }),
       ...[...e.strategies].map(sid => model.byId.get(sid)).sort(byAttackId).map(ds => el('div', { class: 'item' },
         el('button', { class: 'linkish', on: { click: () => openDrawer(() => detectionDrawer(domain, ds.id)) } }, el('span', { class: 'mono', text: ds.attackId }), ' ', ds.name)))));
@@ -1040,22 +1040,17 @@
     return names.length > 4 ? names.slice(0, 4).join(', ') + ' +' + (names.length - 4) : names.join(', ');
   }
 
-  /** Reflect exportUi on the (possibly re-rendered) button and the status line. */
+  /** Reflect exportUi on the export button and the status line (the line keeps its height, so nothing moves). */
   function syncExportUi() {
     const btn = $('#exportWorkpaper');
-    if (btn) {
-      // aria-disabled rather than disabled, so keyboard focus stays on the button while it works
-      btn.setAttribute('aria-disabled', String(exportUi.busy));
-      btn.setAttribute('aria-busy', String(exportUi.busy));
-      btn.textContent = exportUi.busy ? 'Building workpaper…' : EXPORT_LABEL;
-    }
+    // aria-disabled rather than disabled, so keyboard focus stays on the button while it works
+    btn.setAttribute('aria-disabled', String(exportUi.busy));
+    btn.setAttribute('aria-busy', String(exportUi.busy));
     const status = $('#exportStatus');
-    if (status) {
-      status.textContent = exportUi.msg;
-      status.title = exportUi.msg;
-      status.classList.toggle('err', exportUi.err);
-      status.hidden = !exportUi.msg;
-    }
+    const text = exportUi.busy ? 'Building workpaper…' : exportUi.msg;
+    status.textContent = text;
+    status.title = text;
+    status.classList.toggle('err', !exportUi.busy && exportUi.err);
   }
 
   /** One frame, so the busy label paints before the synchronous build; a timer covers hidden tabs. */
@@ -1191,6 +1186,10 @@
       update();
     });
     $('#pickNone').addEventListener('click', () => { state.selection[state.ui.pickTab].clear(); update(); });
+
+    $('#exportWorkpaper').addEventListener('click', exportWorkpaper);
+    $('#exportCsv').addEventListener('click', exportCsv);
+    $('#exportNavigator').addEventListener('click', exportLayers);
 
     $('#scrim').addEventListener('click', closeDrawer);
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawerBuilder) closeDrawer(); });

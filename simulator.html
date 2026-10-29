@@ -105,12 +105,16 @@
   .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--muted); }
   .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
   .tabs .count { font-weight: 400; font-variant-numeric: tabular-nums; }
-  .tabs .exports { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-items: center; padding-bottom: 6px; max-width: 100%; }
-  .tabs .exports button { border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 13px; color: var(--text); white-space: nowrap; }
-  .tabs .exports button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
-  .tabs .exports button.primary:hover:not([aria-disabled="true"]) { background: var(--accent); filter: brightness(1.08); }
-  .tabs .exports button[aria-disabled="true"] { opacity: .65; cursor: progress; }
-  .export-status { margin: -6px 0 10px; font-size: 12px; color: var(--muted); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* export toolbar beside the profile (not in the tab bar, so the tabs keep one row) */
+  .results-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start; margin-bottom: 14px; }
+  .results-head .profile-bar { flex: 1 1 420px; margin-bottom: 0; }
+  .export-bar { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 100%; }
+  .export-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .export-bar button { border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 13px; color: var(--text); white-space: nowrap; }
+  .export-bar button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .export-bar button.primary:hover:not([aria-disabled="true"]) { background: var(--accent); filter: brightness(1.08); }
+  .export-bar button[aria-disabled="true"] { opacity: .65; cursor: progress; }
+  .export-status { min-height: 1.4em; max-width: min(460px, 100%); font-size: 12px; color: var(--muted); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .export-status.err { color: var(--err); white-space: normal; }
   .tab-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; font-size: 14px; }
   .tab-tools .spacer { flex: 1; }
@@ -270,7 +274,18 @@
 
     <!-- ============ results ============ -->
     <section id="results" aria-live="polite">
-      <div class="profile-bar" id="profileBar"></div>
+      <div class="results-head">
+        <div class="profile-bar" id="profileBar"></div>
+        <div class="export-bar" id="exportBar" role="toolbar" aria-label="Export" hidden>
+          <div class="export-buttons">
+            <button class="primary" id="exportWorkpaper" aria-disabled="false"
+              title="Excel workpaper (.xlsx): executive summary, matrix, techniques, mitigations, detections, ICS assets, telemetry and analytics, with editable statuses">Export workpaper</button>
+            <button id="exportCsv" title="Techniques with their mitigations, detections and coverage (.csv)">CSV</button>
+            <button id="exportNavigator" title="Layer for MITRE ATT&amp;CK Navigator, one JSON file per domain">Navigator</button>
+          </div>
+          <div id="exportStatus" class="export-status" role="status"></div>
+        </div>
+      </div>
 
       <div id="emptyProfile" class="card empty-state" hidden>
         <h2>Build a threat profile</h2>
@@ -283,7 +298,6 @@
         <div class="kpis" id="kpis"></div>
 
         <div class="tabs" role="tablist" id="tabs"></div>
-        <div id="exportStatus" class="export-status" role="status" hidden></div>
         <div id="tabTools" class="tab-tools"></div>
         <div id="tabBody"></div>
       </div>

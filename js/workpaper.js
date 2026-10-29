@@ -68,8 +68,8 @@
     { key: 'mitigated', header: 'Mitigation in place? (live)', width: 13, live: true, center: true },
     { key: 'detected', header: 'Detection deployed? (live)', width: 13, live: true, center: true },
     { key: 'coverage', header: 'Coverage (live)', width: 21, live: true },
-    { key: 'procedures', header: 'How the profile uses it (procedure examples)', width: 80 },
-    { key: 'description', header: 'Description', width: 80 },
+    { key: 'procedures', header: 'How the profile uses it (procedure examples)', width: 80, noPrint: true },
+    { key: 'description', header: 'Description', width: 80, noPrint: true },
     { key: 'key', header: 'Key', helper: true },
     { key: 'tacticKeys', header: 'Tactic keys', helper: true },
     { key: 'assetKeys', header: 'Asset keys', helper: true },
@@ -83,14 +83,15 @@
     { key: 'id', header: noun + ' ID', width: 12, link: true },
     { key: 'name', header: noun, width: noun === 'Mitigation' ? 32 : 44, wrap: true },
     { key: 'status', header: statusHeader, width: 17, input: true },
-    { key: 'owner', header: 'Owner', width: 16, inputSoft: true },
+    { key: 'owner', header: 'Owner', width: 16, inputSoft: true, wrap: true },
     { key: 'targetDate', header: 'Target date', width: 12, inputSoft: true, fmt: 'yyyy-mm-dd' },
-    { key: 'notes', header: 'Notes / evidence', width: 30, inputSoft: true },
+    { key: 'notes', header: 'Notes / evidence', width: 36, inputSoft: true, wrap: true },
     { key: 'statusAtExport', header: 'Status at export', width: 13 },
     { key: 'changed', header: 'Changed since export (live)', width: 12, live: true, center: true },
     { key: 'techN', header: `Profile techniques ${verb} (#)`, width: 12, fmt: '0', center: true },
     { key: 'share', header: "Share of its domain's profile techniques", width: 13, fmt: '0.0%', center: true },
     { key: 'adds', header: 'Adds (at export)', width: 10, fmt: '0', center: true },
+    { key: 'score', header: 'Weighted score (at export)', width: 10, fmt: '0', center: true },
     { key: 'cumulative', header: `Cumulative share ${noun === 'Mitigation' ? 'mitigated' : 'detected'} (at export)`, width: 13, fmt: '0%', center: true },
     { key: 'open', header: noun === 'Mitigation' ? 'Unmitigated techniques it addresses (live)' : 'Undetected techniques it covers (live)', width: 15, fmt: '0', live: true, center: true },
   ];
@@ -98,17 +99,17 @@
   const MIT_COLS = [
     ...controlCols('Mitigation', 'Implementation status ▼', 'addressed'),
     { key: 'techs', header: 'Profile techniques addressed (IDs)', width: 40 },
-    { key: 'description', header: 'Description', width: 80 },
+    { key: 'description', header: 'Description', width: 80, noPrint: true },
     { key: 'key', header: 'Key', helper: true },
   ];
 
   const DET_COLS = [
     ...controlCols('Detection strategy', 'Deployment status ▼', 'covered'),
+    { key: 'techs', header: 'Profile techniques covered (IDs)', width: 30 },
     { key: 'anN', header: 'Analytics (#)', width: 10, fmt: '0', center: true },
     { key: 'platforms', header: 'Analytic platforms', width: 22, wrap: true },
-    { key: 'dcs', header: 'Data components', width: 36 },
-    { key: 'logSources', header: 'Log sources', width: 36 },
-    { key: 'techs', header: 'Profile techniques covered (IDs)', width: 30 },
+    { key: 'dcs', header: 'Data components', width: 36, noPrint: true },   // the Analytics sheet prints these in full
+    { key: 'logSources', header: 'Log sources', width: 36, noPrint: true },
     { key: 'key', header: 'Key', helper: true },
     { key: 'dcKeys', header: 'Data component keys', helper: true },
   ];
@@ -123,7 +124,7 @@
     { key: 'platforms', header: 'Platforms', width: 24, wrap: true },
     { key: 'sectors', header: 'Sectors', width: 16 },
     { key: 'techs', header: 'Profile techniques targeting it (IDs)', width: 50 },
-    { key: 'description', header: 'Description', width: 80 },
+    { key: 'description', header: 'Description', width: 80, noPrint: true },
     { key: 'key', header: 'Key', helper: true },
   ];
 
@@ -137,31 +138,31 @@
     { key: 'deployed', header: 'Deployed strategies using it (live)', width: 14, fmt: '0', live: true, center: true },
     { key: 'logSources', header: 'Log sources', width: 40 },
     { key: 'details', header: 'What to collect (log source: what to look for; the Analytics sheet lists every entry)', width: 90 },
-    { key: 'description', header: 'Description', width: 60 },
+    { key: 'description', header: 'Description', width: 60, noPrint: true },
     { key: 'key', header: 'Key', helper: true },
   ];
 
   const ANALYTIC_COLS = [
     { key: 'domain', header: 'Domain', width: 11 },
     { key: 'detId', header: 'Detection ID', width: 12, link: true },
+    { key: 'anId', header: 'Analytic ID', width: 11, link: true },
     { key: 'det', header: 'Detection strategy', width: 40, wrap: true },
     { key: 'status', header: 'Deployment status (live)', width: 15, live: true },
-    { key: 'anId', header: 'Analytic ID', width: 11, link: true },
     { key: 'platforms', header: 'Platforms', width: 18, wrap: true },
     { key: 'dc', header: 'Data component', width: 28 },
     { key: 'logSource', header: 'Log source', width: 30 },
     { key: 'lookFor', header: 'What to look for', width: 80 },
     { key: 'techs', header: 'Profile techniques the strategy covers', width: 24 },
-    { key: 'description', header: 'Analytic description', width: 80 },
+    { key: 'description', header: 'Analytic description', width: 80, noPrint: true },
     { key: 'detKey', header: 'Detection key', helper: true },
   ];
 
   const MAP_COLS = [
     { key: 'domain', header: 'Domain', width: 11 },
     { key: 'techId', header: 'Technique ID', width: 12 },
+    { key: 'ctlId', header: 'Control ID', width: 11, link: true },
     { key: 'tech', header: 'Technique', width: 32, wrap: true },
     { key: 'type', header: 'Control type', width: 17 },
-    { key: 'ctlId', header: 'Control ID', width: 11, link: true },
     { key: 'ctl', header: 'Control', width: 40, wrap: true },
     { key: 'status', header: 'Control status (live)', width: 15, live: true },
     { key: 'guidance', header: 'How it applies to this technique', width: 90 },
@@ -240,6 +241,11 @@
     return clean(t);
   }
 
+  /** Log-source channel text is query and log syntax, not markdown: keep it verbatim on one line. */
+  const channelText = s => clean(String(s).replace(/\s+/g, ' ').trim());
+  /** Log-source names, trimmed: a few ATT&CK references carry a trailing space. */
+  const sourceName = l => String(l.name || '').trim();
+
   const link = (text, url) => (url ? { text: clean(text), hyperlink: url } : clean(text));
   const solid = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb }, bgColor: { argb } });
   const thin = argb => ({ style: 'thin', color: { argb } });
@@ -282,7 +288,8 @@
   // ---------- data preparation (no ExcelJS) ----------
 
   function prepare(ctx) {
-    const P = { domains: [], techniques: [], mitigations: [], detections: [], assets: [], telemetry: [], analytics: [], map: [], profile: [] };
+    const P = { domains: [], techniques: [], mitigations: [], detections: [], assets: [], telemetry: [], analytics: [], map: [], profile: [],
+      unresolved: new Set() };
     const generated = ctx.generatedAt || new Date();
 
     for (const r of ctx.results) {
@@ -405,6 +412,7 @@
         techN: e.techniques.size,
         share: total ? e.techniques.size / total : 0,
         adds: on ? null : p.adds,
+        score: on ? null : p.score,
         cumulative: p.cumulative,
         key: keyOf(e.obj),
       });
@@ -424,12 +432,13 @@
       for (const [id, e] of [...r.detections].sort(order(r.detPriority, detOn))) {
         const techs = [...e.techniques].map(tid => m.byId.get(tid)).sort(byAttackId);
         const dcs = [...e.dataComponents].map(lookup).filter(Boolean).sort(byName);
-        const logSources = uniq(e.analytics.flatMap(a => (a.logSources || []).map(l => l.name).filter(Boolean))).sort();
+        const missing = e.dataComponents.size - dcs.length;   // referenced but not in the loaded ATT&CK data
+        const logSources = uniq(e.analytics.flatMap(a => (a.logSources || []).map(sourceName).filter(Boolean))).sort();
         const row = Object.assign(controlRow(e, r.detPriority.get(id), detOn(id), DET), {
           openNow: techs.filter(tech => !r.techniques.get(tech.id).isDetected).length,
           anN: e.analytics.length,
           platforms: clean(uniq(e.analytics.flatMap(a => a.platforms || [])).sort().join(', ')),
-          dcs: clean(dcs.map(dc => dc.name).join('; ')),
+          dcs: clean(dcs.map(dc => dc.name).join('; ') + (missing ? `${dcs.length ? '; ' : ''}+${missing} not in the loaded ATT&CK data` : '')),
           logSources: clean(logSources.join('; ')),
           techs: clean(techs.map(tech => tech.attackId).join(', ')),
           dcKeys: clean(';' + dcs.map(keyOf).join(';') + ';'),
@@ -443,6 +452,7 @@
           const refs = (a.logSources || []).length ? a.logSources : [{}];
           for (const l of refs) {
             const dc = l.dataComponent ? lookup(l.dataComponent) : null;
+            if (l.dataComponent && !dc) P.unresolved.add(l.dataComponent);
             P.analytics.push({
               domain: label,
               detId: link(e.obj.attackId || e.obj.id, e.obj.url),
@@ -450,9 +460,9 @@
               statusNow: detOn(id) ? DET.on : DET.off,
               anId: link(a.attackId || a.id, a.url),
               platforms: clean((a.platforms || []).join(', ')),
-              dc: dc ? clean([dc.attackId, dc.name].filter(Boolean).join(' ')) : '',
-              logSource: clean(l.name || ''),
-              lookFor: l.channel && l.channel !== 'None' ? plain(l.channel) : '',
+              dc: dc ? clean([dc.attackId, dc.name].filter(Boolean).join(' ')) : l.dataComponent ? 'Not in the loaded ATT&CK data' : '',
+              logSource: clean(sourceName(l)),
+              lookFor: l.channel && l.channel !== 'None' ? channelText(l.channel) : '',
               techs: clean(techs.map(tech => tech.attackId).join(', ')),
               description: plain(a.description),
               detKey: keyOf(e.obj),
@@ -482,7 +492,7 @@
       for (const [, e] of [...r.dataComponents].sort((a, b) => b[1].techniques.size - a[1].techniques.size || byAttackId(a[1].obj, b[1].obj))) {
         const names = [...e.logSources.keys()].sort();
         const details = names.map(n => {
-          const ch = [...e.logSources.get(n)].map(plain);
+          const ch = uniq([...e.logSources.get(n)].map(channelText)).sort((a, b) => a.localeCompare(b));
           return n + (ch.length ? ': ' + ch.slice(0, CHANNELS_PER_SOURCE).join(' | ')
             + (ch.length > CHANNELS_PER_SOURCE ? ` | +${ch.length - CHANNELS_PER_SOURCE} more` : '') : '');
         });
@@ -527,7 +537,13 @@
       }
     }
 
-    P.dataComponents = new Set(P.domains.flatMap(D => [...D.result.dataComponents.values()].map(e => e.obj.attackId || e.obj.id))).size;
+    const dcDomains = new Map();   // data component -> number of domains using it
+    for (const D of P.domains) for (const e of D.result.dataComponents.values()) {
+      const k = e.obj.attackId || e.obj.id;
+      dcDomains.set(k, (dcDomains.get(k) || 0) + 1);
+    }
+    P.dataComponents = dcDomains.size;
+    P.dcShared = [...dcDomains.values()].filter(n => n > 1).length;
     P.generated = generated;
     return P;
   }
@@ -583,8 +599,12 @@
     // row's keys with it. build() adds the _xlnm._FilterDatabase name LibreOffice needs to import it.
     ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: L.last, column: L.cols.length } };
     ws.views = [{ state: 'frozen', xSplit: freezeCols, ySplit: 1, activeCell: 'A2' }];
+    // Long single-line columns (narratives and lists) show only their start on paper, so they stay out of the print area.
+    const stop = L.cols.findIndex(c => c.noPrint || c.helper);
+    const lastPrinted = stop < 0 ? L.cols.length : stop;
     ws.pageSetup = {
-      orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 2, fitToHeight: 0,
+      orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 2, fitToHeight: 0, pageOrder: 'overThenDown',
+      printArea: `A$1:${colLetter(lastPrinted)}$${L.last}`,   // absolute rows: LibreOffice ignores a relative print area
       printTitlesRow: '1:1', printTitlesColumn: freezeCols ? `A:${colLetter(freezeCols)}` : undefined,
       margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.3, footer: 0.3 },
     };
@@ -844,9 +864,15 @@
     ws.getRow(COUNTS).height = 16;
     lines.forEach((l, j) => { ws.getRow(FIRST + j).height = Math.max(15, 12 * l + 3); });
     ws.views = [{ state: 'frozen', xSplit: 0, ySplit: COUNTS, activeCell: 'A' + FIRST, showGridLines: false }];
-    // A3 landscape, two pages wide, keeps the 9pt technique names readable on paper.
+    // A3 landscape. A tactic is a status + technique column pair (about 161pt printed); when the matrix is
+    // wider than a page it prints as two halves with a manual break between tactics (written by build()),
+    // scaled so each half fits. Fit-to-page is off because it can override manual breaks.
+    const PAGE_W = 1133, TACTIC_W = 161;
+    const per = cols.length * TACTIC_W > PAGE_W ? Math.ceil(cols.length / 2) : cols.length;
+    D.matrixColumnBreak = per < cols.length ? 2 * per : null;
     ws.pageSetup = {
-      orientation: 'landscape', paperSize: 8, fitToPage: true, fitToWidth: 2, fitToHeight: 0, printTitlesRow: `${HEAD}:${COUNTS}`,
+      orientation: 'landscape', paperSize: 8, scale: Math.min(100, Math.floor((100 * PAGE_W) / (per * TACTIC_W))),
+      pageOrder: 'overThenDown', printTitlesRow: `${HEAD}:${COUNTS}`,
       margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.3, footer: 0.3 },
     };
   }
@@ -871,8 +897,10 @@
     for (let c = BAR.first; c <= LAST_COL; c++) ws.getColumn(c).width = 1.4;
 
     let row = 1;
+    const blockStarts = [];   // [row, level]: sections (0) and the blocks inside them (1), kept together on paper
     const text = (r, c, v, f = {}) => put(ws, r, c, v, { font: font(f) });
     const band = title => {
+      blockStarts.push([row, 0]);
       for (let c = 1; c <= LAST_COL; c++) {
         put(ws, row, c, c === 1 ? title : null, { fill: solid(C.band), font: font({ bold: true, size: 12, color: { argb: C.white } }), alignment: { vertical: 'middle' } });
       }
@@ -881,8 +909,8 @@
     };
     const legendRuns = (title, items) => ({
       richText: [{ text: title + '   ', font: font({ bold: true }) }]
-        .concat(...items.map(([fill, label]) => [
-          { text: '■ ', font: font({ size: 12, color: { argb: fill } }) },
+        .concat(...items.map(([fill, label, glyph = '■']) => [
+          { text: glyph + ' ', font: font({ size: 12, color: { argb: fill } }) },
           { text: label + '   ', font: font() },
         ])),
     });
@@ -949,7 +977,8 @@
     text(row, 1, 'ATT&CK threat readiness workpaper', { size: 18, bold: true });
     ws.getRow(row).height = 28;
     row++;
-    text(row, 1, clean('Threat profile: ' + profileNames(ctx)), { size: 12, bold: true });
+    const profileLine = clean('Threat profile: ' + profileNames(ctx));
+    merged(row, 1, LAST_COL, profileLine, { font: font({ size: 12, bold: true }), alignment: { wrapText: true, vertical: 'top' } }, 17 * lines(profileLine, 150) + 2);
     row++;
     const when = P.generated.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
     text(row, 1, clean(`Generated ${when} with ThreatSim · ` + P.domains.map(D => `${D.label} ATT&CK v${D.version}`).join(' · ')), { color: { argb: C.muted } });
@@ -968,8 +997,12 @@
     put(ws, row, 1, 'Overall readiness', { font: font({ bold: true, size: 12 }), alignment: { vertical: 'middle' } });
     const readyNow = pct(all.covered + all.mitigated + all.detected, totalTech);
     put(ws, row, 2, F(`$G$${tableFirst}`, readyNow), { font: font({ size: 22, bold: true }), numFmt: '0%', alignment: { horizontal: 'center', vertical: 'middle' } });
-    merged(row, 3, 8, F(`$C$${tableFirst}&" of "&$B$${tableFirst}&" techniques are mitigated and detected, "&($D$${tableFirst}+$E$${tableFirst})&" are partly covered and "&$F$${tableFirst}&" have no coverage."`,
-      `${all.covered} of ${totalTech} techniques are mitigated and detected, ${all.mitigated + all.detected} are partly covered and ${all.gap} have no coverage.`),
+    const t = c => `$${c}$${tableFirst}`;
+    const partial = all.mitigated + all.detected;
+    merged(row, 3, 8, F(`${t('C')}&" of "&${t('B')}&IF(${t('B')}=1," technique"," techniques")&IF(${t('C')}=1," is"," are")&" mitigated and detected, "`
+      + `&(${t('D')}+${t('E')})&IF(${t('D')}+${t('E')}=1," is"," are")&" partly covered and "&${t('F')}&IF(${t('F')}=1," has"," have")&" no coverage."`,
+    `${all.covered} of ${totalTech} ${totalTech === 1 ? 'technique' : 'techniques'} ${all.covered === 1 ? 'is' : 'are'} mitigated and detected, `
+      + `${partial} ${partial === 1 ? 'is' : 'are'} partly covered and ${all.gap} ${all.gap === 1 ? 'has' : 'have'} no coverage.`),
     { font: font({ size: 11 }), alignment: { wrapText: true, vertical: 'middle' } });
     ws.getRow(row).height = 36;
     barCells(row);
@@ -1005,7 +1038,8 @@
     row++;
 
     // Controls (live)
-    headerRow(['Controls', 'Mapped', 'In place / deployed', 'Not yet', 'Share in place'], legendRuns('Progress (live)', [[C.good, 'In place / deployed'], [C.track, 'Not yet']]));
+    blockStarts.push([row, 1]);
+    headerRow(['Controls', 'Mapped', 'In place / deployed', 'Not yet', 'Share in place'], legendRuns('Progress (live)', [[C.good, 'In place / deployed'], [C.muted, 'Not yet', '□']]));
     const ctlRows = [];
     const addCtl = (label, perDomain, L, on, totalKey, onKey) => {
       ctlRows.push({ label, L, on, total: sum(totalKey), now: sum(onKey) });
@@ -1028,12 +1062,23 @@
       row++;
     }
     progressBarRules(firstCtl, row - 1);
-    row++;
+    const changedRow = row;
+    const changedNote = `IF($B${changedRow}=0,"None: every status still matches the export.",$B${changedRow}&IF($B${changedRow}=1," status differs"," statuses differ")`
+      + `&" from the export. Priorities and Adds are still the export values; set the same statuses in ThreatSim and export again to re-rank.")`;
+    text(row, 1, 'Statuses changed since export (live)', { bold: true });
+    put(ws, row, 2, F(`COUNTIF(${LM.range('changed')},"Changed")+COUNTIF(${LD.range('changed')},"Changed")`, 0),
+      { font: font({ bold: true }), numFmt: '#,##0', alignment: { horizontal: 'center' }, fill: solid(C.live) });
+    merged(row, 3, 8, F(changedNote, 'None: every status still matches the export.'), { font: font({ color: { argb: C.muted } }), alignment: { wrapText: true, vertical: 'top' } }, 28);
+    row += 2;
 
     // ---- Recommended next actions (ranked at export, live status) ----
     band(`Recommended next actions (top ${TOP_ACTIONS} per domain, ranked at export)`);
+    merged(row, 1, 8, F(`IF($B$${changedRow}>0,"Ranked at export; "&$B$${changedRow}&IF($B$${changedRow}=1," status has"," statuses have")&" changed since, so export again from ThreatSim to re-rank.","")`, ''),
+      { font: font({ italic: true, color: { argb: C.warnInk } }) });
+    row++;
     const actions = (kind, L, V) => {
       const isMit = kind === 'mit';
+      blockStarts.push([row, 1]);
       text(row, 1, isMit ? 'Mitigations to put in place' : 'Detection strategies to deploy', { bold: true, size: 11 });
       row++;
       headerRow([isMit ? 'Mitigation' : 'Detection strategy', 'ID', 'Domain', 'Priority (at export)', 'Profile techniques', 'Adds (at export)',
@@ -1045,10 +1090,11 @@
         const total = isMit ? D.mitTotal : D.detTotal, on = isMit ? D.mitOn : D.detOn;
         const noun = isMit ? 'mitigation' : 'detection strategy', nouns = isMit ? 'mitigations' : 'detection strategies';
         if (!list.length) {
+          const off = total - on;
           note(!total ? `${D.label}: no ATT&CK ${nouns} map to this profile's techniques.`
-            : on === total ? `${D.label}: all ${plural(total, noun, nouns)} were already ${V.on} at export.`
-            : isMit ? `${D.label}: the ${plural(total - on, noun, nouns)} not ${V.on} at export address no technique that is still unmitigated.`
-            : `${D.label}: the ${plural(total - on, noun, nouns)} not ${V.on} at export cover no technique that is still undetected.`);
+            : on === total ? (total === 1 ? `${D.label}: the only ${noun} was already ${V.on} at export.` : `${D.label}: all ${total} ${nouns} were already ${V.on} at export.`)
+            : isMit ? `${D.label}: the ${plural(off, noun, nouns)} not ${V.on} at export ${off === 1 ? 'addresses' : 'address'} no technique that is still unmitigated.`
+            : `${D.label}: the ${plural(off, noun, nouns)} not ${V.on} at export ${off === 1 ? 'covers' : 'cover'} no technique that is still undetected.`);
           continue;
         }
         for (const a of list) {
@@ -1068,7 +1114,9 @@
         const inTier = (isMit ? D.tierCounts.mit : D.tierCounts.det).get(lastTier) || 0;
         const shown = list.filter(a => a.priority === lastTier).length;
         if (inTier > shown) {
-          note(`${D.label}: ${inTier} ${nouns} share priority ${lastTier}; the ${shown} shown are ordered by reach, documented procedure examples, then ATT&CK ID.`);
+          note(`${D.label}: ${inTier} ${nouns} share priority ${lastTier}; `
+            + (shown === 1 ? 'the one shown was picked by reach, documented procedure examples, then ATT&CK ID.'
+              : `the ${shown} shown are ordered by reach, documented procedure examples, then ATT&CK ID.`));
         }
       }
       if (row > first) equalsRule(ws, `H${first}:H${row - 1}`, V.on, C.goodTint, C.goodInk, prio);
@@ -1082,6 +1130,7 @@
     headerRow(['Tactic', 'Techniques', COVERAGE.covered, COVERAGE.mitigated, COVERAGE.detected, COVERAGE.gap, 'Readiness', 'Fully covered'], READINESS_LEGEND);
     for (const D of P.domains) {
       if (P.domains.length > 1) {
+        blockStarts.push([row, 1]);
         for (let c = 1; c <= 8; c++) put(ws, row, c, c === 1 ? `${D.label} ATT&CK` : null, { font: font({ bold: true }), fill: solid(C.idle) });
         row++;
       }
@@ -1106,22 +1155,27 @@
 
     // ---- Profile at a glance (at export) ----
     band('Profile at a glance');
-    const dcShared = sum('dcTotal') - P.dataComponents;
     const glance = [
       ['Adversaries in profile', P.profile.length, profileNames(ctx)],
-      ['Techniques in scope', totalTech, `${sum('subs')} sub-techniques · ${sum('tacticsHit')} of ${sum('tacticsAll')} tactics`],
+      ['Techniques in scope', totalTech, `${plural(sum('subs'), 'sub-technique', 'sub-techniques')} · ${sum('tacticsHit')} of ${sum('tacticsAll')} tactics`],
       ['Techniques with no ATT&CK mitigation', sum('noMitigation'),
         (P.domains.length > 1 ? P.domains.map(D => `${D.noMitigation} ${D.label}`).join(', ') + '. ' : '') + 'Detection is the only lever for these.'],
       ['Mitigations mapped', sum('mitTotal'), 'ATT&CK mitigations that address at least one profile technique'],
       ['Detection strategies mapped', sum('detTotal'), 'ATT&CK detection strategies for the profile techniques'],
       ['Data components (telemetry)', P.dataComponents, 'Distinct log data types the detection strategies rely on'
-        + (dcShared > 0 ? ` (${dcShared} used by both domains, so the Telemetry sheet has ${sum('dcTotal')} rows)` : '')],
+        + (P.dcShared > 0 ? ` (${P.dcShared} ${P.dcShared === 1 ? 'is' : 'are'} used by more than one domain and get a Telemetry row in each: ${sum('dcTotal')} rows)` : '')],
     ];
+    if (P.unresolved.size) {
+      glance.push(['Data components not loaded', P.unresolved.size, 'Referenced by these analytics but not in the loaded ATT&CK data (ICS ATT&CK uses some Enterprise data components). '
+        + 'Pull Enterprise ATT&CK on the Data page for the complete telemetry list.']);
+    }
     if (P.domains.some(D => D.assetTotal)) glance.push(['ICS assets targeted', sum('assetTotal'), 'Assets targeted by the profile\'s ICS techniques']);
     for (const [label, value, note] of glance) {
       text(row, 1, label, { bold: true });
       put(ws, row, 2, value, { font: font({ size: 12, bold: true }), numFmt: '#,##0', alignment: { horizontal: 'center' } });
-      text(row, 3, clean(note), { color: { argb: C.muted } });
+      const n = clean(note);
+      merged(row, 3, 8, n, { font: font({ color: { argb: C.muted } }), alignment: { wrapText: true, vertical: 'top' } }, Math.max(17, 13 * lines(n, 100) + 4));
+      ws.getCell(row, 1).alignment = { vertical: 'top' };
       row++;
     }
     row++;
@@ -1153,7 +1207,7 @@
       ['Readiness', 'Share of profile techniques with at least one mitigation In Place or detection strategy Deployed. Fully covered means both. Partial means one of the two.'],
       ['Coverage', 'A technique is mitigated when any mitigation mapped to it on the Control Map sheet is In Place, and detected when any detection strategy mapped to it is Deployed.'],
       ['(live) and (at export)', 'Figures marked (live) are formulas that recalculate when you change a status. Figures marked (at export), including priorities, were fixed when ThreatSim exported this workbook. "Status at export" keeps the original statuses, and "Changed since export" flags the rows you have edited.'],
-      ['Priority', 'Ranked by ThreatSim at export: each step picks the control covering the most still-uncovered techniques, weighting techniques used by more selected adversaries higher. Controls with equal scores share a priority number and are listed by reach, documented procedure examples, then ATT&CK ID. Adds is how many techniques a pick newly covers; Cumulative is the share covered once it is added. To re-rank after editing statuses here, set the same statuses in ThreatSim and export again (owners, dates and notes are not carried over).'],
+      ['Priority', 'Ranked by ThreatSim at export: each step picks the control covering the most still-uncovered techniques, weighting techniques used by more selected adversaries higher. The weighted score is the sum, over the techniques a pick newly covers, of the number of selected adversaries using each. Controls with equal scores share a priority number and are listed by reach, documented procedure examples, then ATT&CK ID. Adds is how many techniques a pick newly covers; Cumulative is the share covered once it is added. To re-rank after editing statuses here, set the same statuses in ThreatSim and export again (owners, dates and notes are not carried over).'],
       ['Sheets', 'Matrix: techniques by tactic, shaded by usage, with a live status column. Techniques: every profile technique with live coverage. '
         + 'Mitigations and Detections: set statuses here (yellow drop-downs), with owner, target date and notes. ICS Assets: assets targeted by ICS techniques and how exposed they are. '
         + 'Telemetry: data components and log sources the detection strategies rely on. Analytics: every analytic and what to look for in each log source. '
@@ -1170,10 +1224,40 @@
       row++;
     }
 
+    // Paginate the summary here so Excel and LibreOffice break it in the same places: a manual break goes
+    // before any row that would not fit, so neither app adds breaks of its own (Excel keeps manual row
+    // breaks when only the width is fitted). A4 landscape leaves 516pt of rows and the summary prints at
+    // about 81% to fit the width; the 5% headroom covers differences in how the apps scale. A heading
+    // stays with its first rows, and a block shorter than half a page stays whole.
+    const CAPACITY = 0.95 * 516 / 0.81;
+    const heightOf = r => ws.getRow(r).height || 15;
+    const span = (a, b) => { let h = 0; for (let k = a; k < b; k++) h += heightOf(k); return h; };
+    const blockEnds = new Map();   // first row -> end rows (exclusive) of the blocks that start there
+    blockStarts.forEach(([r, level], i) => {
+      const next = blockStarts.slice(i + 1).find(([, l]) => l <= level);
+      blockEnds.set(r, [...(blockEnds.get(r) || []), next ? next[0] : row]);
+    });
+    const needAt = r => {   // height that must share a page with row r
+      if (!blockEnds.has(r)) return heightOf(r);
+      let need = 0, h = 0;
+      for (let k = r; k < Math.min(r + 4, row); k++) {   // the heading and three rows...
+        if (k > r && blockEnds.has(k)) { need = Math.max(need, h + needAt(k)); break; }   // ...or what a heading below needs
+        h += heightOf(k);
+        need = Math.max(need, h);
+      }
+      for (const e of blockEnds.get(r)) if (span(r, e) <= CAPACITY / 2) need = Math.max(need, span(r, e));
+      return need;
+    };
+    let used = 0;
+    for (let r = 1; r < row; r++) {
+      if (used > 0 && used + needAt(r) > CAPACITY) { ws.getRow(r - 1).addPageBreak(1, 16384); used = 0; }
+      used += heightOf(r);
+    }
+
     ws.views = [{ showGridLines: false, activeCell: 'A1' }];
     ws.pageSetup = {
       orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0,
-      printArea: `A1:${barZ}${row - 1}`,
+      printArea: `A$1:${barZ}$${row - 1}`,   // absolute rows: LibreOffice ignores a relative print area
       margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.3, footer: 0.3 },
     };
   }
@@ -1231,20 +1315,34 @@
       .map(([ws, L]) => `<definedName name="_xlnm._FilterDatabase" localSheetId="${wb.worksheets.indexOf(ws)}" hidden="1">`
         + xmlText(`${quoteSheet(ws.name)}!$A$1:$${colLetter(L.cols.length)}$${L.last}`) + '</definedName>')
       .join('');
-    const xlsx = wb.xlsx;
-    const addWorkbook = xlsx.addWorkbook.bind(xlsx);
-    xlsx.addWorkbook = async (zip, model) => {
-      const append = zip.append;
-      zip.append = function (data, options) {
-        if (options && options.name === 'xl/workbook.xml' && typeof data === 'string') {
-          data = data.includes('</definedNames>')
-            ? data.replace('</definedNames>', () => filterNames + '</definedNames>')
-            : data.replace('<calcPr', () => '<definedNames>' + filterNames + '</definedNames><calcPr');
+    const patches = new Map([['xl/workbook.xml', xml => (xml.includes('</definedNames>')
+      ? xml.replace('</definedNames>', () => filterNames + '</definedNames>')
+      : xml.replace('<calcPr', () => '<definedNames>' + filterNames + '</definedNames><calcPr'))]]);
+
+    // ExcelJS writes row breaks but not column breaks: add the matrix halves' break after the
+    // page-setup elements, where CT_Worksheet expects colBreaks (after headerFooter and rowBreaks).
+    P.domains.forEach((D, i) => {
+      if (!D.matrixColumnBreak) return;
+      const breaks = `<colBreaks count="1" manualBreakCount="1"><brk id="${D.matrixColumnBreak}" max="1048575" man="1"/></colBreaks>`;
+      patches.set(`xl/worksheets/sheet${matrices[i].id}.xml`, xml => {
+        for (const end of ['</rowBreaks>', '</headerFooter>']) {
+          if (xml.includes(end)) return xml.replace(end, () => end + breaks);
         }
-        return append.call(this, data, options);
+        return xml.replace('</worksheet>', () => breaks + '</worksheet>');
+      });
+    });
+    const xlsx = wb.xlsx;
+    for (const method of ['addWorkbook', 'addWorksheets']) {
+      const original = xlsx[method].bind(xlsx);
+      xlsx[method] = async (zip, model) => {
+        const append = zip.append;
+        zip.append = function (data, options) {
+          const patch = options && patches.get(options.name);
+          return append.call(this, patch && typeof data === 'string' ? patch(data) : data, options);
+        };
+        try { return await original(zip, model); } finally { zip.append = append; }
       };
-      try { return await addWorkbook(zip, model); } finally { zip.append = append; }
-    };
+    }
     return wb;
   }
 

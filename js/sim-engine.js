@@ -111,6 +111,7 @@
     const mitigations = new Map();  // id -> { obj, techniques:Set, guidance: Map techId->desc }
     const detections = new Map();   // id -> { obj, techniques:Set, analytics:[], dataComponents:Set }
     const dataComponents = new Map(); // id -> { obj, techniques:Set, strategies:Set, logSources: Map name->Set(channel) }
+    const unresolvedDataComponents = new Set();   // STIX ids referenced by analytics but not in any loaded bundle
     const assets = new Map();       // id -> { obj, techniques:Set }
 
     for (const [techId, t] of techniques) {
@@ -156,20 +157,24 @@
           // Data components are shared objects: an ICS analytic can reference one that only the
           // Enterprise bundle defines, so fall back to the other loaded domains (opts.resolve).
           const dc = byId.get(l.dataComponent) || (opts.resolve ? opts.resolve(l.dataComponent) : null);
-          if (!dc) continue;
+          if (!dc) {
+            if (l.dataComponent) unresolvedDataComponents.add(l.dataComponent);
+            continue;
+          }
           let e = dataComponents.get(dc.id);
           if (!e) dataComponents.set(dc.id, e = { obj: dc, techniques: new Set(), strategies: new Set(), logSources: new Map() });
           for (const tid of d.techniques) e.techniques.add(tid);
           e.strategies.add(dsId);
-          if (l.name) {
-            if (!e.logSources.has(l.name)) e.logSources.set(l.name, new Set());
-            if (l.channel && l.channel !== 'None') e.logSources.get(l.name).add(l.channel);
+          const name = String(l.name || '').trim();   // a few ATT&CK names carry a trailing space
+          if (name) {
+            if (!e.logSources.has(name)) e.logSources.set(name, new Set());
+            if (l.channel && l.channel !== 'None') e.logSources.get(name).add(l.channel);
           }
         }
       }
     }
 
-    return { domain: model.domain, model, roots, techniques, mitigations, detections, dataComponents, assets };
+    return { domain: model.domain, model, roots, techniques, mitigations, detections, dataComponents, assets, unresolvedDataComponents };
   }
 
   /**
@@ -207,7 +212,11 @@
   function prioritize(entries, inPlaceKeys, domain, techniques) {
     const total = techniques.size || 1;
     const weight = tid => (techniques.get(tid) ? techniques.get(tid).roots.size : 1);
-    const documented = tid => (techniques.get(tid) ? techniques.get(tid).evidence.length : 0);
+    const docs = new Map();   // merged procedure examples per technique (see procedures())
+    const documented = tid => {
+      if (!docs.has(tid)) { const t = techniques.get(tid); docs.set(tid, t ? procedures(t).length : 0); }
+      return docs.get(tid);
+    };
     const covered = new Set();
     const out = new Map();
     const remaining = [];
