@@ -460,7 +460,11 @@
         on: { click: () => { state.ui.tab = t.key; state.ui.filter = ''; persist(); renderTabs(); renderTab(); } },
       }, t.label, n != null ? el('span', { class: 'count', text: ' ' + fmtN(n) }) : null);
     }), el('span', { class: 'exports' },
-      el('button', { text: 'Export CSV', title: 'Techniques with their mitigations, detections and coverage', on: { click: exportCsv } }),
+      el('span', { class: 'export-status', id: 'exportStatus', role: 'status' }),
+      el('button', { class: 'primary', id: 'exportWorkpaper', text: 'Export workpaper (.xlsx)',
+        title: 'Excel workpaper: executive summary, matrix, techniques, mitigations, detections, ICS assets and telemetry, with editable statuses',
+        on: { click: exportWorkpaper } }),
+      el('button', { text: 'CSV', title: 'Techniques with their mitigations, detections and coverage', on: { click: exportCsv } }),
       el('button', { text: 'Navigator layer', title: 'JSON layer for MITRE ATT&CK Navigator, one file per domain', on: { click: exportLayers } })));
   }
 
@@ -1023,6 +1027,30 @@
   function profileName() {
     const names = PICK_TABS.flatMap(t => [...state.selection[t.key]].map(id => (entity(id) || {}).name)).filter(Boolean);
     return names.length > 4 ? names.slice(0, 4).join(', ') + ' +' + (names.length - 4) : names.join(', ');
+  }
+
+  async function exportWorkpaper(e) {
+    const btn = e.currentTarget;
+    const status = $('#exportStatus');
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Building workpaper…';
+    status.textContent = '';
+    status.classList.remove('err');
+    try {
+      const name = await Workpaper.download({
+        results: state.results, inPlace: state.inPlace, opts: state.opts, showAll: state.ui.showAll,
+        selection: state.selection, kinds: PICK_TABS, entity, domainLabel,
+      });
+      status.textContent = 'Saved ' + name;
+    } catch (err) {
+      console.error(err);
+      status.textContent = 'Export failed: ' + err.message;
+      status.classList.add('err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
   }
 
   function exportCsv() {

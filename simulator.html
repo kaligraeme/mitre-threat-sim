@@ -107,6 +107,10 @@
   .tabs .count { font-weight: 400; font-variant-numeric: tabular-nums; }
   .tabs .exports { margin-left: auto; display: flex; gap: 6px; align-items: center; padding-bottom: 6px; }
   .tabs .exports button { border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 13px; color: var(--text); }
+  .tabs .exports button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .tabs .exports button.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+  .tabs .exports .export-status { font-size: 12px; color: var(--muted); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tabs .exports .export-status.err { color: var(--err); white-space: normal; }
   .tab-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; font-size: 14px; }
   .tab-tools .spacer { flex: 1; }
   .tab-tools input[type="search"] { font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
@@ -291,6 +295,7 @@
 
 <script src="js/attack-db.js"></script>
 <script src="js/sim-engine.js"></script>
+<script src="js/workpaper.js"></script>
 <script src="js/simulator.js"></script>
 </body>
 </html>

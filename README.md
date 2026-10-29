@@ -26,11 +26,37 @@ techniques they use, then to the relevant mitigations and detections.
    - **ICS assets:** assets targeted by the profile's ICS techniques.
    - Click any row or matrix cell for details: procedure examples, mitigation guidance, and analytics
      with their log sources.
-4. **Export:** CSV of the technique mapping, or ATT&CK Navigator layers (one JSON per domain).
+4. **Export:** an Excel workpaper (below), a CSV of the technique mapping, or ATT&CK Navigator layers
+   (one JSON per domain).
 
 Priority uses a weighted greedy method: each step picks the control that covers the most uncovered
 techniques, with a technique counting once per selected adversary that uses it. Your selections and
 posture are saved in the browser's localStorage.
+
+## Excel workpaper
+
+**Export workpaper (.xlsx)** on the Simulator tab writes the current profile and posture to a workbook:
+
+| Sheet | Contents |
+|---|---|
+| Executive Summary | Profile at a glance, overall readiness with the **readiness bar**, readiness per domain and per tactic, controls in place, the top 10 recommended mitigations and detection strategies per domain, the threat profile, and scope and method notes |
+| Matrix (Enterprise) / Matrix (ICS) | ATT&CK matrix of the profile, shaded by how many selected adversaries use each technique, with a live coverage column (✓ mitigated + detected, M mitigated only, D detected only, ✕ no coverage) |
+| Techniques | Every profile technique: tactics, platforms, who uses it, its mitigations and detection strategies, live coverage, procedure examples |
+| Mitigations | **Implementation status** drop-down (*In Place* / *Not In Place*), priority at export, reach, live count of unmitigated techniques it addresses, owner and notes columns |
+| Detections | **Deployment status** drop-down (*Deployed* / *Not Deployed*), priority at export, reach, live count of undetected techniques it covers, analytics, data components, log sources, owner and notes columns |
+| ICS Assets | Assets targeted by the profile's ICS techniques, with live counts of exposed and fully covered techniques |
+| Telemetry | Data components and log sources the detection strategies rely on, with a live count of deployed strategies using each |
+| Control Map | Each technique-to-control link, with the control's live status and how the mitigation applies |
+
+The drop-downs start at the posture you set in ThreatSim. Everything that depends on them is a formula:
+technique coverage, the readiness figures and bars, the matrix status column and the "live" columns.
+Changing a status recalculates the workbook; no macros are involved. Priorities are ranked when you
+export, so re-export to re-rank after changing statuses. The bars are conditional formatting on cells,
+so they work in Excel, LibreOffice Calc and Google Sheets.
+
+The workbook is built in the browser with [ExcelJS](https://github.com/exceljs/exceljs) 4.4.0 (MIT,
+`js/vendor/exceljs.min.js`, licence in `js/vendor/exceljs.LICENSE.txt`). It loads only when you first
+export.
 
 ## Run
 
